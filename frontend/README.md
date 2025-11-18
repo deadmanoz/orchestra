@@ -26,7 +26,7 @@ React + TypeScript frontend for the Orchestra multi-agent orchestration platform
 
 - Node.js 18+
 - npm or yarn
-- Backend server running on `http://localhost:8000`
+- Backend server running on `http://localhost:3030`
 
 ### Installation
 
@@ -95,7 +95,7 @@ frontend/
 
 ## API Integration
 
-The frontend connects to the backend API at `http://localhost:8000/api` via Vite's proxy configuration.
+The frontend connects to the backend API at `http://localhost:3030/api` via Vite's proxy configuration.
 
 ### Key Endpoints
 
@@ -149,7 +149,7 @@ Full TypeScript support with interfaces for:
 
 ## Development Notes
 
-- The dev server proxies `/api` and `/ws` requests to `http://localhost:8000`
+- The dev server proxies `/api` and `/ws` requests to `http://localhost:3030`
 - Hot module replacement (HMR) is enabled for fast development
 - TanStack Query provides automatic caching and refetching
 - Workflows in "running" state are polled every 2 seconds

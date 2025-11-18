@@ -66,9 +66,9 @@ python -m backend.db.connection
 python -m backend.main
 ```
 
-Backend will be available at `http://localhost:8000`
+Backend will be available at `http://localhost:3030`
 
-API docs: `http://localhost:8000/docs`
+API docs: `http://localhost:3030/docs`
 
 ### Frontend Setup
 
@@ -206,8 +206,8 @@ OPENAI_API_KEY=your_key_here
 ### Frontend (vite.config.ts)
 
 Configured to proxy:
-- `/api/*` → `http://localhost:8000/api/*`
-- `/ws/*` → `ws://localhost:8000/ws/*`
+- `/api/*` → `http://localhost:3030/api/*`
+- `/ws/*` → `ws://localhost:3030/ws/*`
 
 ## Development
 
@@ -253,7 +253,7 @@ Replace `MockAgent` in `backend/agents/`:
 - `POST /api/workflows/{id}/resume` - Resume from checkpoint
 - `WS /ws/{id}` - WebSocket for real-time updates
 
-Full API documentation available at `http://localhost:8000/docs`
+Full API documentation available at `http://localhost:3030/docs`
 
 ## Testing
 

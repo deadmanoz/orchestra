@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # API
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 3030
     cors_origins: list[str] = ["http://localhost:5173"]
 
     @field_validator('cors_origins', mode='before')
