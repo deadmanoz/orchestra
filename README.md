@@ -48,6 +48,10 @@ Orchestra provides a web interface for orchestrating multiple AI coding agents (
 ### Backend Setup
 
 ```bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 # Install Python dependencies
 pip install -r requirements.txt
 
