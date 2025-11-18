@@ -12,6 +12,7 @@ active_connections: dict[str, list[WebSocket]] = {}
 async def websocket_endpoint(websocket: WebSocket, workflow_id: str):
     """WebSocket for real-time workflow updates"""
     await websocket.accept()
+    print(f"[WebSocket] Client connected for workflow {workflow_id}")
 
     # Add to active connections
     if workflow_id not in active_connections:
@@ -31,15 +32,26 @@ async def websocket_endpoint(websocket: WebSocket, workflow_id: str):
                     "timestamp": datetime.now().isoformat()
                 }
 
-                await websocket.send_json(status_update)
+                try:
+                    await websocket.send_json(status_update)
+                except Exception as e:
+                    print(f"[WebSocket] Failed to send message: {e}")
+                    break
 
             # Wait before next update
             await asyncio.sleep(2)
 
     except WebSocketDisconnect:
-        active_connections[workflow_id].remove(websocket)
-        if not active_connections[workflow_id]:
+        print(f"[WebSocket] Client disconnected for workflow {workflow_id}")
+    except Exception as e:
+        print(f"[WebSocket] Error: {e}")
+    finally:
+        # Clean up connection
+        if websocket in active_connections.get(workflow_id, []):
+            active_connections[workflow_id].remove(websocket)
+        if workflow_id in active_connections and not active_connections[workflow_id]:
             del active_connections[workflow_id]
+        print(f"[WebSocket] Connection cleaned up for workflow {workflow_id}")
 
 async def broadcast_to_workflow(workflow_id: str, message: dict):
     """Broadcast message to all connections for a workflow"""

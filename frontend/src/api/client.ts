@@ -47,19 +47,49 @@ export const workflowApi = {
 export class WorkflowWebSocket {
   private ws: WebSocket | null = null;
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private workflowId: string | null = null;
 
   connect(workflowId: string) {
+    this.workflowId = workflowId;
     const wsUrl = `ws://${window.location.host}/ws/${workflowId}`;
+    console.log('[WebSocket] Connecting to:', wsUrl);
     this.ws = new WebSocket(wsUrl);
 
+    this.ws.onopen = () => {
+      console.log('[WebSocket] Connection opened');
+      this.reconnectAttempts = 0;
+    };
+
     this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      const listeners = this.listeners.get(message.type) || new Set();
-      listeners.forEach(listener => listener(message));
+      try {
+        const message = JSON.parse(event.data);
+        console.log('[WebSocket] Message received:', message);
+        const listeners = this.listeners.get(message.type) || new Set();
+        listeners.forEach(listener => listener(message));
+      } catch (error) {
+        console.error('[WebSocket] Failed to parse message:', error);
+      }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('[WebSocket] Error:', error);
+    };
+
+    this.ws.onclose = (event) => {
+      console.log('[WebSocket] Connection closed:', event.code, event.reason);
+
+      // Attempt to reconnect if not a normal closure
+      if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.reconnectAttempts++;
+        console.log(`[WebSocket] Reconnecting... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        setTimeout(() => {
+          if (this.workflowId) {
+            this.connect(this.workflowId);
+          }
+        }, 2000 * this.reconnectAttempts);
+      }
     };
 
     return this;

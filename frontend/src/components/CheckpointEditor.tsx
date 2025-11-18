@@ -10,11 +10,16 @@ interface Props {
 }
 
 export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
-  const [editedContent, setEditedContent] = useState(checkpoint.editable_content);
+  const [editedContent, setEditedContent] = useState(checkpoint.editable_content || '');
   const [userNotes, setUserNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
 
   const resumeWorkflow = useResumeWorkflow(workflowId);
+
+  // Safety check
+  if (!checkpoint) {
+    return <div style={{ color: '#ff6b6b' }}>Error: No checkpoint data available</div>;
+  }
 
   const handleAction = async (action: string) => {
     try {
@@ -44,10 +49,10 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
         <div>
           <h3 style={{ margin: '0 0 0.5rem 0' }}>
-            🛑 Checkpoint #{checkpoint.checkpoint_number}
+            🛑 Checkpoint #{checkpoint.checkpoint_number ?? 0}
           </h3>
           <p style={{ margin: 0, color: '#888', fontSize: '0.9rem' }}>
-            {checkpoint.step_name} • Iteration {checkpoint.iteration}
+            {checkpoint.step_name ?? 'Unknown step'} • Iteration {checkpoint.iteration ?? 0}
           </p>
         </div>
         <button
@@ -63,18 +68,20 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
       </div>
 
       {/* Instructions */}
-      <div style={{
-        padding: '1rem',
-        backgroundColor: '#2a2a2a',
-        borderRadius: '4px',
-        marginBottom: '1rem',
-        fontSize: '0.95rem'
-      }}>
-        <strong>Instructions:</strong> {checkpoint.instructions}
-      </div>
+      {checkpoint.instructions && (
+        <div style={{
+          padding: '1rem',
+          backgroundColor: '#2a2a2a',
+          borderRadius: '4px',
+          marginBottom: '1rem',
+          fontSize: '0.95rem'
+        }}>
+          <strong>Instructions:</strong> {checkpoint.instructions}
+        </div>
+      )}
 
       {/* Agent Outputs */}
-      {checkpoint.agent_outputs.length > 0 && (
+      {checkpoint.agent_outputs && checkpoint.agent_outputs.length > 0 && (
         <div style={{ marginBottom: '1rem' }}>
           <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem' }}>Agent Outputs</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -167,7 +174,7 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
       {/* Action Buttons */}
       <div style={{ display: 'flex', gap: '1rem' }}>
         <button
-          onClick={() => handleAction(checkpoint.actions.primary)}
+          onClick={() => handleAction(checkpoint.actions?.primary || 'approve')}
           disabled={resumeWorkflow.isPending}
           style={{
             flex: 2,
@@ -186,10 +193,10 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
           }}
         >
           <Check size={20} />
-          {checkpoint.actions.primary}
+          {checkpoint.actions?.primary || 'Approve'}
         </button>
 
-        {checkpoint.actions.secondary.map((action) => (
+        {checkpoint.actions?.secondary && checkpoint.actions.secondary.map((action) => (
           <button
             key={action}
             onClick={() => handleAction(action)}
