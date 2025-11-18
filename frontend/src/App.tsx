@@ -2,6 +2,7 @@ import { useState } from 'react';
 import WorkflowDashboard from './components/WorkflowDashboard';
 import CreateWorkflowForm from './components/CreateWorkflowForm';
 import CheckpointEditor from './components/CheckpointEditor';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useWorkflow } from './hooks/useWorkflow';
 import { useWebSocket } from './hooks/useWebSocket';
 
@@ -35,7 +36,7 @@ function App() {
           {error && <div style={{ color: '#ff6b6b' }}>Error: {error.message}</div>}
 
           {workflowData && (
-            <>
+            <ErrorBoundary>
               <WorkflowDashboard
                 workflow={workflowData.workflow}
                 messages={workflowData.recent_messages}
@@ -44,12 +45,14 @@ function App() {
               />
 
               {workflowData.pending_checkpoint && (
-                <CheckpointEditor
-                  workflowId={currentWorkflowId}
-                  checkpoint={workflowData.pending_checkpoint}
-                />
+                <ErrorBoundary>
+                  <CheckpointEditor
+                    workflowId={currentWorkflowId}
+                    checkpoint={workflowData.pending_checkpoint}
+                  />
+                </ErrorBoundary>
               )}
-            </>
+            </ErrorBoundary>
           )}
         </div>
       )}
