@@ -56,7 +56,13 @@ class TestPlanReviewWorkflow:
 
         assert workflow.agent_factory is factory
         assert workflow.graph is not None
+        assert workflow._checkpointer_cm is not None
+        assert workflow.checkpointer is None  # Not initialized until setup()
+
+        # Test setup
+        await workflow.setup()
         assert workflow.checkpointer is not None
+        assert workflow._setup_complete is True
 
     @pytest.mark.asyncio
     async def test_workflow_compile(self):
@@ -64,6 +70,7 @@ class TestPlanReviewWorkflow:
         factory = AgentFactory()
         workflow = PlanReviewWorkflow(factory)
 
+        await workflow.setup()
         compiled = workflow.compile()
 
         assert compiled is not None
@@ -162,6 +169,7 @@ class TestWorkflowExecution:
         """Test workflow executes to first checkpoint"""
         factory = AgentFactory()
         workflow = PlanReviewWorkflow(factory)
+        await workflow.setup()
         compiled = workflow.compile()
 
         initial_state = {

@@ -1,13 +1,12 @@
 from typing import TypedDict, Annotated, Sequence
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command, interrupt
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from datetime import datetime
 import operator
 import uuid
 import asyncio
-import sqlite3
 
 from backend.workflows.templates import PromptTemplates
 from backend.agents.base import AgentInterface
@@ -33,9 +32,12 @@ class PlanReviewWorkflow:
         self.agent_factory = agent_factory
         self.templates = PromptTemplates()
         self.graph = self._build_graph()
-        # Create persistent SQLite connection for checkpointing
-        self.conn = sqlite3.connect(settings.langgraph_checkpoint_db, check_same_thread=False)
-        self.checkpointer = SqliteSaver(self.conn)
+        # Use AsyncSqliteSaver for async workflow execution
+        # Initialize the async context manager
+        self._checkpointer_cm = AsyncSqliteSaver.from_conn_string(settings.langgraph_checkpoint_db)
+        # We'll enter the context manager in an async setup method
+        self.checkpointer = None
+        self._setup_complete = False
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow"""
@@ -267,6 +269,15 @@ class PlanReviewWorkflow:
 
         return consolidated
 
+    async def setup(self):
+        """Async setup to initialize the checkpointer context manager"""
+        if not self._setup_complete:
+            self.checkpointer = await self._checkpointer_cm.__aenter__()
+            self._setup_complete = True
+
     def compile(self):
         """Compile the workflow with SQLite checkpointer"""
+        # Note: setup() must be called before compile() to initialize checkpointer
+        if self.checkpointer is None:
+            raise RuntimeError("Workflow not set up. Call await workflow.setup() before compile()")
         return self.graph.compile(checkpointer=self.checkpointer)

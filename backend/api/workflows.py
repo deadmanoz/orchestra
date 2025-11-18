@@ -49,6 +49,7 @@ async def create_workflow(
     # Create workflow instance
     if workflow_create.type.value == "plan_review":
         workflow = PlanReviewWorkflow(agent_factory)
+        await workflow.setup()  # Initialize async checkpointer
         compiled_workflow = workflow.compile()
     else:
         raise HTTPException(status_code=400, detail="Unsupported workflow type")
