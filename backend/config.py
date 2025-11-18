@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Literal
+from typing import Literal, Union
 from pydantic import field_validator
 
 class Settings(BaseSettings):
@@ -10,16 +10,23 @@ class Settings(BaseSettings):
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 3030
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: Union[str, list[str]] = ["http://localhost:5173"]
 
     @field_validator('cors_origins', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(',')]
-        return v
+            # Handle empty string
+            if not v or not v.strip():
+                return ["http://localhost:5173"]
+            # Parse comma-separated values and filter empty strings
+            return [origin.strip() for origin in v.split(',') if origin.strip()]
+        if isinstance(v, list):
+            return v
+        return ["http://localhost:5173"]
 
     # Database
+    database_path: str = "data/orchestra.db"
     database_url: str = "sqlite+aiosqlite:///./data/orchestra.db"
 
     # Agents
