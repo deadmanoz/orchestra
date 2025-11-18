@@ -1,5 +1,5 @@
 import type { Workflow, Message, AgentExecution } from '../types';
-import { CheckCircle, Clock, XCircle, PlayCircle } from 'lucide-react';
+import { CheckCircle, Clock, XCircle, PlayCircle, Folder } from 'lucide-react';
 
 interface Props {
   workflow: Workflow;
@@ -39,14 +39,22 @@ export default function WorkflowDashboard({ workflow, messages, executions, onRe
         backgroundColor: '#1a1a1a'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-          <div>
+          <div style={{ flex: 1 }}>
             <h2 style={{ margin: '0 0 0.5rem 0' }}>{workflow.name}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888', marginBottom: '0.5rem' }}>
               {getStatusIcon(workflow.status)}
               <span style={{ textTransform: 'capitalize' }}>{workflow.status}</span>
               <span>•</span>
               <span>{workflow.type}</span>
             </div>
+            {workflow.workspace_path && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888', fontSize: '0.9rem' }}>
+                <Folder size={16} />
+                <code style={{ backgroundColor: '#0a0a0a', padding: '0.25rem 0.5rem', borderRadius: '3px' }}>
+                  {workflow.workspace_path}
+                </code>
+              </div>
+            )}
           </div>
           <button onClick={onReset} style={{ fontSize: '0.9rem' }}>
             New Workflow

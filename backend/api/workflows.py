@@ -5,6 +5,8 @@ import asyncio
 from datetime import datetime
 import json
 import aiosqlite
+import os
+from pathlib import Path
 
 from backend.models.workflow import (
     WorkflowCreate, WorkflowResponse, WorkflowStateSnapshot, WorkflowStatus
@@ -20,6 +22,24 @@ router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 # In-memory store for active workflows (replace with Redis in production)
 active_workflows = {}
 
+def validate_workspace_path(workspace_path: Optional[str]) -> Optional[str]:
+    """Validate and resolve workspace path"""
+    if not workspace_path:
+        return None
+
+    # Resolve to absolute path
+    resolved_path = Path(workspace_path).resolve()
+
+    # Check if path exists and is a directory
+    if not resolved_path.exists():
+        raise HTTPException(status_code=400, detail=f"Workspace path does not exist: {workspace_path}")
+
+    if not resolved_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Workspace path is not a directory: {workspace_path}")
+
+    # Convert to string
+    return str(resolved_path)
+
 @router.post("", response_model=WorkflowResponse)
 async def create_workflow(
     workflow_create: WorkflowCreate,
@@ -28,18 +48,22 @@ async def create_workflow(
     """Create and start a new workflow"""
     workflow_id = f"wf-{uuid.uuid4().hex[:12]}"
 
+    # Validate workspace path
+    workspace_path = validate_workspace_path(workflow_create.workspace_path)
+
     # Save to database
     async with db.get_connection() as conn:
         await conn.execute(
             """
-            INSERT INTO workflows (id, name, type, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO workflows (id, name, type, status, workspace_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 workflow_id,
                 workflow_create.name,
                 workflow_create.type.value,
                 WorkflowStatus.RUNNING.value,
+                workspace_path,
                 datetime.now().isoformat(),
                 datetime.now().isoformat()
             )
@@ -48,7 +72,7 @@ async def create_workflow(
 
     # Create workflow instance
     if workflow_create.type.value == "plan_review":
-        workflow = PlanReviewWorkflow(agent_factory)
+        workflow = PlanReviewWorkflow(agent_factory, workspace_path=workspace_path)
         await workflow.setup()  # Initialize async checkpointer
         compiled_workflow = workflow.compile()
     else:
@@ -74,6 +98,7 @@ async def create_workflow(
         name=workflow_create.name,
         type=workflow_create.type.value,
         status=WorkflowStatus.RUNNING.value,
+        workspace_path=workspace_path,
         created_at=datetime.now(),
         updated_at=datetime.now()
     )

@@ -9,6 +9,7 @@ interface Props {
 export default function CreateWorkflowForm({ onWorkflowCreated }: Props) {
   const [name, setName] = useState('');
   const [type, setType] = useState<'plan_review' | 'implementation' | 'custom'>('plan_review');
+  const [workspacePath, setWorkspacePath] = useState('');
   const [prompt, setPrompt] = useState('');
 
   const createWorkflow = useCreateWorkflow();
@@ -20,6 +21,7 @@ export default function CreateWorkflowForm({ onWorkflowCreated }: Props) {
       name,
       type,
       initial_prompt: prompt,
+      workspace_path: workspacePath || undefined,
     };
 
     try {
@@ -85,6 +87,30 @@ export default function CreateWorkflowForm({ onWorkflowCreated }: Props) {
             <option value="implementation">Implementation</option>
             <option value="custom">Custom</option>
           </select>
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: '0.5rem' }}>
+            Workspace Path (optional)
+          </label>
+          <input
+            type="text"
+            value={workspacePath}
+            onChange={(e) => setWorkspacePath(e.target.value)}
+            placeholder="/path/to/your/codebase or leave empty for current directory"
+            style={{
+              width: '100%',
+              padding: '0.5rem',
+              fontSize: '1rem',
+              borderRadius: '4px',
+              border: '1px solid #444',
+              backgroundColor: '#2a2a2a',
+              color: 'white'
+            }}
+          />
+          <small style={{ display: 'block', marginTop: '0.25rem', color: '#888', fontSize: '0.85rem' }}>
+            Absolute path to the directory where agents will work
+          </small>
         </div>
 
         <div>

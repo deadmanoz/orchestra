@@ -4,6 +4,7 @@ export interface Workflow {
   name: string;
   type: string;
   status: string;
+  workspace_path?: string;
   created_at: string;
   updated_at: string;
   completed_at?: string;
@@ -15,6 +16,7 @@ export interface WorkflowCreate {
   name: string;
   type: 'plan_review' | 'implementation' | 'custom';
   initial_prompt: string;
+  workspace_path?: string;
   metadata?: Record<string, any>;
 }
 

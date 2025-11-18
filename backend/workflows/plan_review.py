@@ -28,8 +28,9 @@ class PlanReviewState(TypedDict):
 class PlanReviewWorkflow:
     """Implements the plan-review-iterate workflow with human checkpoints"""
 
-    def __init__(self, agent_factory):
+    def __init__(self, agent_factory, workspace_path: str = None):
         self.agent_factory = agent_factory
+        self.workspace_path = workspace_path
         self.templates = PromptTemplates()
         self.graph = self._build_graph()
         # Use AsyncSqliteSaver for async workflow execution
@@ -74,7 +75,7 @@ class PlanReviewWorkflow:
         print(f"[PlanningAgent] Starting iteration {state.get('iteration_count', 0)}")
 
         # Get planning agent
-        planning_agent = await self.agent_factory.get_agent("planning", "claude_planner")
+        planning_agent = await self.agent_factory.get_agent("planning", "claude_planner", workspace_path=self.workspace_path)
 
         # Build prompt
         if state.get("review_feedback"):
@@ -145,7 +146,7 @@ class PlanReviewWorkflow:
         print(f"[ReviewAgents] Executing parallel reviews")
 
         # Get review agents
-        review_agents = await self.agent_factory.get_review_agents()
+        review_agents = await self.agent_factory.get_review_agents(workspace_path=self.workspace_path)
 
         plan_to_review = state.get("user_edits") or state["current_plan"]
 
