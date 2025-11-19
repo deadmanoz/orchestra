@@ -170,7 +170,8 @@ async def get_workflow(workflow_id: str):
 
         # Get current state from LangGraph checkpoint
         try:
-            state = compiled_workflow.get_state(config)
+            # Use async method since we're using AsyncSqliteSaver
+            state = await compiled_workflow.aget_state(config)
             print(f"[API] State for {workflow_id}: {state}")
             print(f"[API] State values: {state.values if state else None}")
             print(f"[API] State next: {state.next if state else None}")
