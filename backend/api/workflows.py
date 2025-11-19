@@ -172,26 +172,23 @@ async def get_workflow(workflow_id: str):
         try:
             # Use async method since we're using AsyncSqliteSaver
             state = await compiled_workflow.aget_state(config)
-            print(f"[API] State for {workflow_id}: {state}")
-            print(f"[API] State values: {state.values if state else None}")
-            print(f"[API] State next: {state.next if state else None}")
+            print(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
 
-            # When workflow hits interrupt(), the state contains the checkpoint data
-            # The __interrupt__ field contains the data passed to interrupt()
-            if state and hasattr(state, 'values'):
-                state_dict = state.values
-                if '__interrupt__' in state_dict:
-                    # Extract the interrupt data (this is what we passed to interrupt())
-                    interrupt_data = state_dict['__interrupt__']
-                    print(f"[API] Found interrupt data: {interrupt_data}")
+            # LangGraph stores interrupt data in state.interrupts (tuple of Interrupt objects)
+            # NOT in state.values['__interrupt__']
+            if state and hasattr(state, 'interrupts') and state.interrupts:
+                # interrupts is a tuple, take the first one
+                interrupt_obj = state.interrupts[0]
+                print(f"[API] Found interrupt object: {type(interrupt_obj)}")
 
-                    # The interrupt data should be a tuple: (value,)
-                    if isinstance(interrupt_data, tuple) and len(interrupt_data) > 0:
-                        pending_checkpoint = interrupt_data[0]
-                    else:
-                        pending_checkpoint = interrupt_data
+                # Extract the value from the Interrupt object
+                if hasattr(interrupt_obj, 'value'):
+                    pending_checkpoint = interrupt_obj.value
+                    print(f"[API] ✓ Extracted checkpoint data, keys: {pending_checkpoint.keys() if isinstance(pending_checkpoint, dict) else 'not a dict'}")
                 else:
-                    print(f"[API] No __interrupt__ in state values. Keys: {state_dict.keys() if isinstance(state_dict, dict) else 'not a dict'}")
+                    print(f"[API] Interrupt object has no 'value' attribute")
+            else:
+                print(f"[API] No interrupts in state (state={state is not None}, has_attr={hasattr(state, 'interrupts') if state else False}, interrupts={state.interrupts if state and hasattr(state, 'interrupts') else None})")
         except Exception as e:
             print(f"[API] Error getting checkpoint state: {e}")
             import traceback
