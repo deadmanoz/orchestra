@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Code Review Output",
+  "description": "Structured output format for AI agent code reviews",
+  "type": "object",
+  "required": ["reviewer", "timestamp", "overall_assessment", "issues", "recommendations"],
+  "properties": {
+    "reviewer": {
+      "type": "string",
+      "description": "Name of the reviewing agent"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the review"
+    },
+    "overall_assessment": {
+      "type": "object",
+      "required": ["verdict", "summary"],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["approve", "approve_with_changes", "request_changes", "reject"],
+          "description": "Overall recommendation for the plan"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Brief summary of the review (2-3 sentences)"
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence in the review (0.0 to 1.0)"
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "description": "List of identified issues or concerns",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "title", "description"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low", "info"],
+            "description": "Severity level of the issue"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["security", "performance", "maintainability", "scalability", "architecture", "testing", "documentation", "style", "bug", "other"],
+            "description": "Category of the issue"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short title for the issue"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of the issue"
+          },
+          "location": {
+            "type": "string",
+            "description": "Where in the plan/code this applies (e.g., 'Phase 2', 'Architecture section')"
+          },
+          "suggested_fix": {
+            "type": "string",
+            "description": "Recommended solution or improvement"
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Links to documentation, best practices, or examples"
+          }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "description": "General recommendations and improvements",
+      "items": {
+        "type": "object",
+        "required": ["title", "description"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short title for the recommendation"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed recommendation"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["must_have", "should_have", "nice_to_have"],
+            "description": "Priority level of the recommendation"
+          },
+          "impact": {
+            "type": "string",
+            "description": "Expected impact if implemented"
+          }
+        }
+      }
+    },
+    "positive_aspects": {
+      "type": "array",
+      "description": "What's good about the plan",
+      "items": {
+        "type": "string"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "description": "Questions for clarification",
+      "items": {
+        "type": "object",
+        "required": ["question"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question to be answered"
+          },
+          "context": {
+            "type": "string",
+            "description": "Why this question matters"
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Quantitative assessment metrics",
+      "properties": {
+        "code_quality_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Overall code quality score (0-10)"
+        },
+        "security_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Security assessment score (0-10)"
+        },
+        "maintainability_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maintainability score (0-10)"
+        },
+        "test_coverage_assessment": {
+          "type": "string",
+          "enum": ["excellent", "good", "adequate", "insufficient", "missing"],
+          "description": "Assessment of testing strategy"
+        }
+      }
+    }
+  }
+}

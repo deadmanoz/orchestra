@@ -1,8 +1,14 @@
+import logging
 from typing import Optional, List
+
 from backend.agents.base import AgentInterface
 from backend.agents.mock_agent import MockAgent
 from backend.agents.claude_agent import ClaudeAgent
+from backend.agents.codex_agent import CodexAgent
+from backend.agents.gemini_agent import GeminiAgent
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
 
 class AgentFactory:
     """Factory for creating and managing agents"""
@@ -49,13 +55,21 @@ class AgentFactory:
                 role=role,
                 workspace_path=workspace_path
             )
-        # TODO: Add Codex and Gemini agents
-        # elif name.startswith("codex"):
-        #     return CodexAgent(name=name, role=role, workspace_path=workspace_path)
-        # elif name.startswith("gemini"):
-        #     return GeminiAgent(name=name, role=role, workspace_path=workspace_path)
+        elif name.startswith("codex"):
+            return CodexAgent(
+                name=name,
+                role=role,
+                workspace_path=workspace_path
+            )
+        elif name.startswith("gemini"):
+            return GeminiAgent(
+                name=name,
+                role=role,
+                workspace_path=workspace_path
+            )
         else:
             # Fallback to mock for unknown agent types
+            logger.warning(f"Unknown agent type for '{name}', falling back to MockAgent")
             return MockAgent(
                 name=name,
                 agent_type="unknown",
