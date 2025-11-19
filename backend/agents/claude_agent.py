@@ -71,20 +71,24 @@ class ClaudeAgent(JSONCLIAgent):
         """
         # Try common JSON response patterns
         if isinstance(data, dict):
-            # Pattern 1: Direct 'content' field
+            # Pattern 1: 'result' field (from --output-format json)
+            if 'result' in data:
+                return data['result']
+
+            # Pattern 2: Direct 'content' field
             if 'content' in data:
                 return data['content']
 
-            # Pattern 2: 'message' field
+            # Pattern 3: 'message' field
             if 'message' in data:
                 return data['message']
 
-            # Pattern 3: Nested content in 'response'
+            # Pattern 4: Nested content in 'response'
             if 'response' in data and isinstance(data['response'], dict):
                 if 'content' in data['response']:
                     return data['response']['content']
 
-            # Pattern 4: List of messages (take last one)
+            # Pattern 5: List of messages (take last one)
             if 'messages' in data and isinstance(data['messages'], list) and len(data['messages']) > 0:
                 last_message = data['messages'][-1]
                 if isinstance(last_message, dict) and 'content' in last_message:

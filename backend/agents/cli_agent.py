@@ -246,14 +246,21 @@ class JSONCLIAgent(CLIAgent):
         if not stdout.strip():
             raise CLIAgentError(f"Agent {self.name} returned empty output")
 
+        # Log raw output length for diagnostics
+        logger.debug(f"[{self.name}] Raw stdout length: {len(stdout)} chars")
+
         # Extract JSON from potentially noisy output
         json_str = self._extract_json_from_output(stdout)
+
+        logger.debug(f"[{self.name}] Extracted JSON length: {len(json_str)} chars")
 
         try:
             data = json.loads(json_str)
             return self.extract_content_from_json(data)
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse JSON: {e}")
+            logger.error(f"[{self.name}] Raw stdout length: {len(stdout)} chars, Extracted JSON length: {len(json_str)} chars")
+
             # Log extracted JSON (limit to 2000 chars to avoid log spam)
             if len(json_str) <= 2000:
                 logger.error(f"[{self.name}] Extracted JSON string:\n{json_str}")
@@ -261,8 +268,64 @@ class JSONCLIAgent(CLIAgent):
                 logger.error(f"[{self.name}] Extracted JSON string (first 1000 chars):\n{json_str[:1000]}")
                 logger.error(f"[{self.name}] ... (truncated, total length: {len(json_str)} chars)")
                 logger.error(f"[{self.name}] Last 500 chars:\n{json_str[-500:]}")
+
+                # Try to show where the JSON becomes invalid
+                # Attempt to parse progressively smaller chunks to find the break point
+                for test_len in [5000, 2000, 1000, 500]:
+                    if test_len < len(json_str):
+                        test_str = json_str[:test_len] + '"}}'  # Try to close it artificially
+                        try:
+                            json.loads(test_str)
+                            logger.error(f"[{self.name}] JSON is valid up to ~{test_len} chars (with artificial closing)")
+                            break
+                        except:
+                            continue
+
+            # Attempt fallback: try to extract result/content field using regex
+            logger.warning(f"[{self.name}] Attempting fallback extraction using regex...")
+            result = self._fallback_extract_content(json_str)
+            if result:
+                logger.warning(f"[{self.name}] Fallback extraction succeeded! Extracted {len(result)} chars")
+                return result
+
             logger.debug(f"[{self.name}] Full raw stdout:\n{stdout}")
             raise CLIAgentError(f"Agent {self.name} returned invalid JSON: {str(e)}")
+
+    def _fallback_extract_content(self, malformed_json: str) -> Optional[str]:
+        """
+        Attempt to extract content from malformed JSON using regex.
+
+        This is a fallback when json.loads() fails. It tries to extract
+        the value of common field names like 'result', 'content', 'message'.
+
+        Args:
+            malformed_json: The malformed JSON string
+
+        Returns:
+            Extracted content if found, None otherwise
+        """
+        # Try to extract common field names in order of priority
+        # Pattern matches: "field": "value (where value can have escaped quotes and continues to end of string if unclosed)
+        field_names = ['result', 'content', 'message']
+
+        for field_name in field_names:
+            # Match the field name and opening quote, then capture everything until:
+            # - An unescaped quote followed by comma/brace/end, OR
+            # - End of string (for truncated JSON)
+            pattern = rf'"{field_name}"\s*:\s*"((?:[^"\\]|\\.)*?)(?:(?<!\\)"[\s,\}}]|$)'
+
+            match = re.search(pattern, malformed_json, re.DOTALL)
+            if match:
+                content = match.group(1)
+                # Unescape common JSON escape sequences
+                content = content.replace('\\n', '\n')
+                content = content.replace('\\t', '\t')
+                content = content.replace('\\r', '\r')
+                content = content.replace('\\"', '"')
+                content = content.replace('\\\\', '\\')
+                return content
+
+        return None
 
     def extract_content_from_json(self, data: dict) -> str:
         """
