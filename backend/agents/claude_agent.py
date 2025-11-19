@@ -39,20 +39,24 @@ class ClaudeAgent(JSONCLIAgent):
         """
         Build the Claude Code CLI command.
 
-        Uses --print for non-interactive mode and --output-format json for
-        structured output.
+        Uses --print for non-interactive mode and --output-format stream-json
+        to avoid the 10KB truncation bug in regular json mode.
+
+        Note: Claude Code CLI has a known bug where --output-format json truncates
+        at fixed positions (4000, 6000, 8000, 10000, 12000, 16000 chars).
+        Using stream-json may help avoid this limitation.
 
         Args:
             message: The prompt/message to send to Claude
 
         Returns:
-            Command list: [claude_path, --print, --output-format, json, message]
+            Command list: [claude_path, --print, --output-format, stream-json, message]
         """
         return [
             self.cli_path,
             "--print",           # Non-interactive mode, print response and exit
             "--output-format",   # Specify output format
-            "json",              # JSON format for parsing
+            "stream-json",       # Stream JSON to avoid 10KB truncation bug
             message              # Positional prompt argument
         ]
 

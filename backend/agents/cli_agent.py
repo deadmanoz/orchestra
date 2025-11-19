@@ -181,6 +181,7 @@ class JSONCLIAgent(CLIAgent):
         - JSON is surrounded by progress indicators or warnings
         - Multiple JSON objects are present (takes the last one)
         - Braces inside JSON string values (doesn't count them)
+        - Stream JSON (NDJSON) format with multiple objects per line
 
         Args:
             output: Raw stdout from CLI
@@ -191,6 +192,26 @@ class JSONCLIAgent(CLIAgent):
         # Remove ANSI escape codes (color codes, cursor movement, etc.)
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         cleaned = ansi_escape.sub('', output)
+
+        # Handle stream-json format (newline-delimited JSON)
+        # If output contains multiple lines with JSON objects, try to combine them
+        lines = cleaned.strip().split('\n')
+        if len(lines) > 1:
+            # Try to find complete JSON objects in each line
+            valid_json_lines = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith('{') and line.endswith('}'):
+                    try:
+                        json.loads(line)  # Validate it's proper JSON
+                        valid_json_lines.append(line)
+                    except:
+                        continue
+
+            # If we found valid JSON lines, merge them or take the last one
+            if valid_json_lines:
+                # For stream-json, the last complete object is usually the final result
+                cleaned = valid_json_lines[-1]
 
         # Try to find JSON objects in the output
         # This is a state machine that tracks:
