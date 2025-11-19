@@ -35,7 +35,8 @@ class CodexAgent(CLIAgent):
             agent_type="codex",
             role=role,
             workspace_path=workspace_path,
-            timeout=timeout or settings.agent_timeout
+            timeout=timeout or settings.agent_timeout,
+            use_stdin=True  # Use stdin to avoid command-line argument length limits
         )
         self.cli_path = settings.codex_cli_path
         self.use_review_schema = use_review_schema
@@ -53,23 +54,19 @@ class CodexAgent(CLIAgent):
         Build the Codex CLI command.
 
         Uses `codex exec` for non-interactive execution.
+        Message is passed via stdin to avoid shell argument length limits.
 
         Args:
-            message: The prompt/message to send to Codex
+            message: The prompt/message to send to Codex (passed via stdin, not used here)
 
         Returns:
             Command list with appropriate flags
         """
-        command = [
+        return [
             self.cli_path,
             "exec",        # Non-interactive subcommand
             "--full-auto", # Low-friction sandboxed automatic execution
         ]
-
-        # Add the prompt as argument
-        command.append(message)
-
-        return command
 
     async def parse_response(self, stdout: str, stderr: str) -> str:
         """
