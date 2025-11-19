@@ -40,8 +40,8 @@ class ClaudeAgent(JSONCLIAgent):
         """
         Build the Claude Code CLI command.
 
-        Uses --output-format stream-json without --print to avoid issues with positional arguments.
-        The message will be passed via stdin instead.
+        When Claude CLI receives input via stdin, it automatically enters "print" mode.
+        In print mode with stream-json, --verbose is required.
 
         Note: Claude Code CLI has a known bug where --output-format json truncates
         at fixed positions (4000, 6000, 8000, 10000, 12000, 16000 chars).
@@ -55,6 +55,7 @@ class ClaudeAgent(JSONCLIAgent):
         """
         return [
             self.cli_path,
+            "--verbose",         # Required when using stream-json with stdin (auto-print mode)
             "--output-format",   # Specify output format
             "stream-json",       # Stream JSON to avoid 10KB truncation bug
         ]
