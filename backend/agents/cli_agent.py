@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from abc import abstractmethod
 from typing import Optional, List
 from pathlib import Path
@@ -171,6 +172,49 @@ class JSONCLIAgent(CLIAgent):
     Provides common JSON parsing logic.
     """
 
+    def _extract_json_from_output(self, output: str) -> str:
+        """
+        Extract JSON from CLI output that may contain extra text.
+
+        Handles cases where:
+        - Output contains ANSI escape codes
+        - JSON is surrounded by progress indicators or warnings
+        - Multiple JSON objects are present (takes the last one)
+
+        Args:
+            output: Raw stdout from CLI
+
+        Returns:
+            Cleaned JSON string
+        """
+        # Remove ANSI escape codes (color codes, cursor movement, etc.)
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        cleaned = ansi_escape.sub('', output)
+
+        # Try to find JSON objects in the output
+        # Look for content between { and } (handles nested braces)
+        brace_count = 0
+        json_start = -1
+        json_candidates = []
+
+        for i, char in enumerate(cleaned):
+            if char == '{':
+                if brace_count == 0:
+                    json_start = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and json_start != -1:
+                    json_candidates.append(cleaned[json_start:i+1])
+                    json_start = -1
+
+        # If we found JSON candidates, return the last one (most likely the actual response)
+        if json_candidates:
+            return json_candidates[-1]
+
+        # Fallback: return cleaned output
+        return cleaned.strip()
+
     async def parse_response(self, stdout: str, stderr: str) -> str:
         """
         Parse JSON response from CLI.
@@ -181,12 +225,22 @@ class JSONCLIAgent(CLIAgent):
         if not stdout.strip():
             raise CLIAgentError(f"Agent {self.name} returned empty output")
 
+        # Extract JSON from potentially noisy output
+        json_str = self._extract_json_from_output(stdout)
+
         try:
-            data = json.loads(stdout)
+            data = json.loads(json_str)
             return self.extract_content_from_json(data)
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse JSON: {e}")
-            logger.debug(f"[{self.name}] Raw stdout: {stdout[:500]}...")
+            # Log extracted JSON (limit to 2000 chars to avoid log spam)
+            if len(json_str) <= 2000:
+                logger.error(f"[{self.name}] Extracted JSON string:\n{json_str}")
+            else:
+                logger.error(f"[{self.name}] Extracted JSON string (first 1000 chars):\n{json_str[:1000]}")
+                logger.error(f"[{self.name}] ... (truncated, total length: {len(json_str)} chars)")
+                logger.error(f"[{self.name}] Last 500 chars:\n{json_str[-500:]}")
+            logger.debug(f"[{self.name}] Full raw stdout:\n{stdout}")
             raise CLIAgentError(f"Agent {self.name} returned invalid JSON: {str(e)}")
 
     def extract_content_from_json(self, data: dict) -> str:
