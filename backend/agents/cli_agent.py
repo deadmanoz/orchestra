@@ -97,12 +97,16 @@ class CLIAgent(AgentInterface):
             # Execute the CLI command
             # Pass message via stdin if use_stdin=True, for better handling of multi-line prompts
             stdin_pipe = asyncio.subprocess.PIPE if self.use_stdin else None
+
+            # Start subprocess in new session to prevent interference when running
+            # multiple instances in parallel (prevents terminal/signal conflicts)
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdin=stdin_pipe,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=self.workspace_path
+                cwd=self.workspace_path,
+                start_new_session=True  # Detach from controlling terminal
             )
 
             self.process = process
@@ -110,10 +114,15 @@ class CLIAgent(AgentInterface):
             # Send the message via stdin if enabled, otherwise just wait
             try:
                 if self.use_stdin:
+                    stdin_bytes = content.encode('utf-8')
+                    logger.info(f"[{self.name}] Sending {len(stdin_bytes)} bytes via stdin")
+                    logger.debug(f"[{self.name}] Prompt preview (first 200 chars): {content[:200]!r}")
+
                     stdout, stderr = await asyncio.wait_for(
-                        process.communicate(input=content.encode('utf-8')),
+                        process.communicate(input=stdin_bytes),
                         timeout=self.timeout
                     )
+                    logger.info(f"[{self.name}] Process completed, parsing output...")
                 else:
                     stdout, stderr = await asyncio.wait_for(
                         process.communicate(),
