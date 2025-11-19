@@ -228,7 +228,21 @@ class JSONCLIAgent(CLIAgent):
                 logger.info(f"[_extract_json_from_output] Using result-type message")
                 cleaned = result_json
             elif valid_json_lines:
-                logger.warning(f"[_extract_json_from_output] No result-type found! Using last of {len(valid_json_lines)} JSON objects")
+                logger.error(f"[_extract_json_from_output] CRITICAL: No result-type message found in stream-json output!")
+                logger.error(f"[_extract_json_from_output] Found {len(valid_json_lines)} JSON objects but none had type='result'")
+                logger.error(f"[_extract_json_from_output] This likely means Claude CLI failed or was interrupted before completing")
+
+                # Log types of all messages found
+                for idx, line in enumerate(valid_json_lines):
+                    try:
+                        obj = json.loads(line)
+                        msg_type = obj.get('type', 'unknown')
+                        msg_subtype = obj.get('subtype', '')
+                        logger.error(f"[_extract_json_from_output] Message {idx}: type={msg_type}, subtype={msg_subtype}")
+                    except:
+                        pass
+
+                logger.warning(f"[_extract_json_from_output] Falling back to last JSON object (may be incorrect!)")
                 logger.warning(f"[_extract_json_from_output] Last object preview: {valid_json_lines[-1][:200]}...")
                 cleaned = valid_json_lines[-1]
             else:
