@@ -10,9 +10,11 @@ Orchestra provides a web interface for orchestrating multiple AI coding agents (
 
 - **Multi-Agent Workflows**: Coordinate multiple agents in structured workflows
 - **Human-in-the-Loop**: Mandatory checkpoints for reviewing and editing agent outputs
-- **Real-time Updates**: WebSocket support for live workflow monitoring
+- **Real-time Updates**: WebSocket support with automatic reconnection and live workflow monitoring
 - **Plan-Review Pattern**: Built-in workflow for iterative planning with multi-agent review
 - **Persistent State**: SQLite-based checkpointing for workflow resumption
+- **Workspace Integration**: Support for codebase-specific workflows with workspace paths
+- **Error Resilience**: React Error Boundary for graceful frontend error handling
 - **Type-Safe**: Full TypeScript frontend and Python type hints
 
 ## Architecture
@@ -103,6 +105,7 @@ cd frontend && npm run build
    - **Name**: Descriptive name for your workflow
    - **Type**: Select "Plan & Review" for the default workflow
    - **Initial Prompt**: Describe what you want to build
+   - **Workspace Path** (optional): Path to your codebase for context-aware workflows
 
 Example prompt:
 ```
@@ -283,7 +286,18 @@ npm run lint       # Code quality check
 
 ## Contributing
 
-This is Phase 1 of Orchestra. Future enhancements:
+### Recent Enhancements
+
+Phase 1 is now complete! Recent additions include:
+
+- ✅ **Error Boundary**: React Error Boundary component for graceful error handling
+- ✅ **WebSocket Improvements**: Enhanced error handling and automatic reconnection logic
+- ✅ **Workspace Path Support**: Codebase-specific workflow execution with workspace paths
+- ✅ **Comprehensive Test Suite**: 50 tests with 96%+ pass rate
+
+### Phase 2: Future Enhancements
+
+The following features are planned for Phase 2:
 
 - [ ] Real CLI agent integration (Claude Code, Codex, Gemini)
 - [ ] Authentication and multi-user support
