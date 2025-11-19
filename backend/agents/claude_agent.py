@@ -105,15 +105,24 @@ class ClaudeAgent(JSONCLIAgent):
                     logger.info(f"[{self.name}] Extracted content from result dict, length={len(extracted)}")
                     return extracted
 
-            # Pattern 2: Direct 'content' field
+            # Pattern 2: type=assistant with nested message object (stream-json format)
+            if data.get('type') == 'assistant' and 'message' in data:
+                message = data['message']
+                logger.debug(f"[{self.name}] Found assistant-type with nested message")
+                if isinstance(message, dict) and 'content' in message:
+                    extracted = self._extract_string_content(message['content'])
+                    logger.info(f"[{self.name}] Extracted content from assistant message, length={len(extracted)}")
+                    return extracted
+
+            # Pattern 3: Direct 'content' field
             if 'content' in data:
                 return self._extract_string_content(data['content'])
 
-            # Pattern 3: 'message' field
-            if 'message' in data:
+            # Pattern 4: 'message' field (string)
+            if 'message' in data and isinstance(data['message'], str):
                 return data['message']
 
-            # Pattern 4: Nested content in 'response'
+            # Pattern 5: Nested content in 'response'
             if 'response' in data and isinstance(data['response'], dict):
                 if 'content' in data['response']:
                     return self._extract_string_content(data['response']['content'])
@@ -151,8 +160,17 @@ class ClaudeAgent(JSONCLIAgent):
             text_parts = []
             for block in content:
                 if isinstance(block, dict):
-                    # Handle {"type": "text", "text": "content"} format
-                    if 'text' in block:
+                    block_type = block.get('type', '')
+                    # Extract text from text-type blocks
+                    if block_type == 'text' and 'text' in block:
+                        text_parts.append(block['text'])
+                    # For tool_use blocks, format them nicely for display
+                    elif block_type == 'tool_use':
+                        tool_name = block.get('name', 'unknown_tool')
+                        tool_input = block.get('input', {})
+                        text_parts.append(f"[Using tool: {tool_name} with input: {tool_input}]")
+                    # Fallback: extract text field if present (regardless of type)
+                    elif 'text' in block:
                         text_parts.append(block['text'])
                     # Handle other dict formats
                     elif 'content' in block:
@@ -161,6 +179,11 @@ class ClaudeAgent(JSONCLIAgent):
                     text_parts.append(block)
             if text_parts:
                 return '\n'.join(text_parts)
+            else:
+                # No extractable content - log what we found
+                block_types = [b.get('type', 'unknown') if isinstance(b, dict) else 'string' for b in content]
+                logger.warning(f"[{self.name}] Content list has no extractable text, block types: {block_types}")
+                return str(content)  # Return the raw structure as fallback
 
         # If it's a dict, try to extract text
         if isinstance(content, dict):

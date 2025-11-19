@@ -250,10 +250,11 @@ class JSONCLIAgent(CLIAgent):
                         obj_type = obj.get('type', 'no-type')
                         logger.debug(f"[_extract_json_from_output] Line {idx}: type={obj_type}, length={len(line)}")
 
-                        # Look for the result message (not system/thinking messages)
-                        if isinstance(obj, dict) and obj.get('type') == 'result':
+                        # Look for the actual response (not system/thinking/error messages)
+                        # Claude CLI can return type=result or type=assistant depending on version/mode
+                        if isinstance(obj, dict) and obj.get('type') in ('result', 'assistant'):
                             result_json = line
-                            logger.info(f"[_extract_json_from_output] ✓ Found result-type message on line {idx}")
+                            logger.info(f"[_extract_json_from_output] ✓ Found {obj_type} message on line {idx}")
                     except Exception as e:
                         logger.debug(f"[_extract_json_from_output] Line {idx} failed to parse: {e}")
                         continue
