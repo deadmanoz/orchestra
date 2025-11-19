@@ -58,6 +58,7 @@ class ClaudeAgent(JSONCLIAgent):
             "--verbose",         # Required when using stream-json with stdin (auto-print mode)
             "--output-format",   # Specify output format
             "stream-json",       # Stream JSON to avoid 10KB truncation bug
+            "--yolo",            # Auto-approve all tool use (non-interactive)
         ]
 
     def extract_content_from_json(self, data: dict) -> str:
@@ -161,15 +162,13 @@ class ClaudeAgent(JSONCLIAgent):
             for block in content:
                 if isinstance(block, dict):
                     block_type = block.get('type', '')
-                    # Extract text from text-type blocks
+                    # ONLY extract text from text-type blocks
                     if block_type == 'text' and 'text' in block:
                         text_parts.append(block['text'])
-                    # For tool_use blocks, format them nicely for display
-                    elif block_type == 'tool_use':
-                        tool_name = block.get('name', 'unknown_tool')
-                        tool_input = block.get('input', {})
-                        text_parts.append(f"[Using tool: {tool_name} with input: {tool_input}]")
-                    # Fallback: extract text field if present (regardless of type)
+                    # Skip tool_use and tool_result blocks - they're not the actual response
+                    elif block_type in ('tool_use', 'tool_result'):
+                        continue
+                    # Fallback: extract text field if present (no type or unknown type)
                     elif 'text' in block:
                         text_parts.append(block['text'])
                     # Handle other dict formats
@@ -177,13 +176,15 @@ class ClaudeAgent(JSONCLIAgent):
                         text_parts.append(str(block['content']))
                 elif isinstance(block, str):
                     text_parts.append(block)
+
             if text_parts:
                 return '\n'.join(text_parts)
             else:
-                # No extractable content - log what we found
+                # No text content found - might be a message with only tool calls
                 block_types = [b.get('type', 'unknown') if isinstance(b, dict) else 'string' for b in content]
-                logger.warning(f"[{self.name}] Content list has no extractable text, block types: {block_types}")
-                return str(content)  # Return the raw structure as fallback
+                logger.warning(f"[{self.name}] Content list has no text blocks (only {block_types}), might be intermediate tool message")
+                # Return empty string for intermediate messages, not the raw structure
+                return ""
 
         # If it's a dict, try to extract text
         if isinstance(content, dict):
