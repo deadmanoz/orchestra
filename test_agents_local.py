@@ -136,16 +136,26 @@ async def test_gemini_agent():
     print(f"✓ Agent started: {agent.status}")
 
     try:
-        # Review prompt
-        prompt = "Review this architecture: Microservices with REST APIs, PostgreSQL database, Redis cache, and React frontend."
+        # Review prompt (similar to Codex test)
+        prompt = """Review this development plan:
 
-        print(f"\nSending prompt: {prompt}")
+## Plan: Build a Real-Time Chat Application
+
+1. Set up WebSocket server with Socket.IO
+2. Create chat room management system
+3. Implement user presence tracking
+4. Add message persistence with MongoDB
+5. Build React frontend with real-time updates
+
+Please provide a structured review."""
+
+        print(f"\nSending review request...")
 
         response = await agent.send_message(prompt)
-        print(f"\n✓ Received response ({len(response)} chars)")
-        print("\nResponse preview:")
+        print(f"\n✓ Received review ({len(response)} chars)")
+        print("\nReview preview:")
         print("-" * 60)
-        print(response[:500] + "..." if len(response) > 500 else response)
+        print(response[:1000] + "..." if len(response) > 1000 else response)
         print("-" * 60)
 
         return True
