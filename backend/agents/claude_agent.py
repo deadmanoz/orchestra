@@ -74,17 +74,37 @@ class ClaudeAgent(JSONCLIAgent):
         Returns:
             The extracted message content
         """
+        # SAFETY CHECK: Reject system initialization messages
+        # These have type="system" and subtype="init" and should never be used as agent output
+        if isinstance(data, dict):
+            if data.get('type') == 'system':
+                error_msg = (
+                    f"[{self.name}] ERROR: Received system message instead of result message! "
+                    f"subtype={data.get('subtype')}, This indicates the stream-json filtering failed."
+                )
+                logger.error(error_msg)
+                logger.error(f"[{self.name}] System message data: {str(data)[:500]}")
+                raise ValueError(error_msg)
+
         # Try common JSON response patterns
         if isinstance(data, dict):
+            # Log the message type for debugging
+            msg_type = data.get('type', 'unknown')
+            logger.info(f"[{self.name}] Extracting content from message type='{msg_type}'")
+
             # Pattern 1: 'result' field (from --output-format json)
             if 'result' in data:
                 result = data['result']
+                logger.debug(f"[{self.name}] Found 'result' field, type={type(result).__name__}")
                 # If result is a string, return it directly
                 if isinstance(result, str):
+                    logger.info(f"[{self.name}] Returning string result, length={len(result)}")
                     return result
                 # If result is a dict with content, extract it
                 if isinstance(result, dict) and 'content' in result:
-                    return self._extract_string_content(result['content'])
+                    extracted = self._extract_string_content(result['content'])
+                    logger.info(f"[{self.name}] Extracted content from result dict, length={len(extracted)}")
+                    return extracted
 
             # Pattern 2: Direct 'content' field
             if 'content' in data:
