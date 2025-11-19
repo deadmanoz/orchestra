@@ -1,5 +1,5 @@
 import type { Workflow, Message, AgentExecution } from '../types';
-import { CheckCircle, Clock, XCircle, PlayCircle, Folder } from 'lucide-react';
+import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2 } from 'lucide-react';
 
 interface Props {
   workflow: Workflow;
@@ -8,16 +8,16 @@ interface Props {
   onReset: () => void;
 }
 
-// CSS animation for spinning clock
+// CSS animation for spinning loader
 const spinAnimation = {
   display: 'inline-block',
-  animation: 'spin 2s linear infinite',
+  animation: 'spin 1s linear infinite',
 } as const;
 
 // Inject keyframes into document (only once)
-if (typeof document !== 'undefined' && !document.getElementById('clock-spin-keyframes')) {
+if (typeof document !== 'undefined' && !document.getElementById('loader-spin-keyframes')) {
   const style = document.createElement('style');
-  style.id = 'clock-spin-keyframes';
+  style.id = 'loader-spin-keyframes';
   style.textContent = `
     @keyframes spin {
       from {
@@ -39,7 +39,7 @@ export default function WorkflowDashboard({ workflow, messages, executions, onRe
       case 'running':
         return (
           <span style={spinAnimation}>
-            <Clock color="#ffd43b" size={20} />
+            <Loader2 color="#ffd43b" size={20} />
           </span>
         );
       case 'paused':
