@@ -78,11 +78,17 @@ class ClaudeAgent(JSONCLIAgent):
         if isinstance(data, dict):
             # Pattern 1: 'result' field (from --output-format json)
             if 'result' in data:
-                return data['result']
+                result = data['result']
+                # If result is a string, return it directly
+                if isinstance(result, str):
+                    return result
+                # If result is a dict with content, extract it
+                if isinstance(result, dict) and 'content' in result:
+                    return self._extract_string_content(result['content'])
 
             # Pattern 2: Direct 'content' field
             if 'content' in data:
-                return data['content']
+                return self._extract_string_content(data['content'])
 
             # Pattern 3: 'message' field
             if 'message' in data:
@@ -91,17 +97,59 @@ class ClaudeAgent(JSONCLIAgent):
             # Pattern 4: Nested content in 'response'
             if 'response' in data and isinstance(data['response'], dict):
                 if 'content' in data['response']:
-                    return data['response']['content']
+                    return self._extract_string_content(data['response']['content'])
 
             # Pattern 5: List of messages (take last one)
             if 'messages' in data and isinstance(data['messages'], list) and len(data['messages']) > 0:
                 last_message = data['messages'][-1]
                 if isinstance(last_message, dict) and 'content' in last_message:
-                    return last_message['content']
+                    return self._extract_string_content(last_message['content'])
 
         # If we can't find content, log the structure and return as-is
         logger.warning(f"[{self.name}] Unexpected JSON structure, returning formatted JSON")
         logger.debug(f"[{self.name}] JSON keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+        logger.debug(f"[{self.name}] Data sample: {str(data)[:500]}")
 
         # Fallback to parent class behavior
         return super().extract_content_from_json(data)
+
+    def _extract_string_content(self, content) -> str:
+        """
+        Extract string from content that might be str, list, or dict.
+
+        Args:
+            content: Content value that could be various types
+
+        Returns:
+            String representation of the content
+        """
+        # If already a string, return it
+        if isinstance(content, str):
+            return content
+
+        # If it's a list of content blocks (Claude API format)
+        if isinstance(content, list):
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    # Handle {"type": "text", "text": "content"} format
+                    if 'text' in block:
+                        text_parts.append(block['text'])
+                    # Handle other dict formats
+                    elif 'content' in block:
+                        text_parts.append(str(block['content']))
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            if text_parts:
+                return '\n'.join(text_parts)
+
+        # If it's a dict, try to extract text
+        if isinstance(content, dict):
+            if 'text' in content:
+                return content['text']
+            if 'value' in content:
+                return str(content['value'])
+
+        # Fallback: convert to string
+        logger.warning(f"[{self.name}] Converting non-string content to string: {type(content)}")
+        return str(content)
