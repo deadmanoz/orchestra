@@ -85,12 +85,14 @@ class CLIAgent(AgentInterface):
 
         # Get the CLI command
         command = self.get_cli_command(content)
-        logger.debug(f"[{self.name}] Command: {' '.join(command[:3])}...")  # Log command (truncated)
+        logger.debug(f"[{self.name}] Command: {' '.join(command)}... (will send {len(content)} chars via stdin)")
 
         try:
             # Execute the CLI command
+            # Pass message via stdin for better handling of multi-line prompts
             process = await asyncio.create_subprocess_exec(
                 *command,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.workspace_path
@@ -98,10 +100,10 @@ class CLIAgent(AgentInterface):
 
             self.process = process
 
-            # Wait for completion with timeout
+            # Send the message via stdin and wait for completion with timeout
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
+                    process.communicate(input=content.encode('utf-8')),
                     timeout=self.timeout
                 )
             except asyncio.TimeoutError:
@@ -124,9 +126,20 @@ class CLIAgent(AgentInterface):
             stdout_str = stdout.decode('utf-8', errors='replace')
             stderr_str = stderr.decode('utf-8', errors='replace')
 
+            # Log raw output lengths for diagnostics
+            logger.info(f"[{self.name}] Raw output: stdout={len(stdout_str)} chars, stderr={len(stderr_str)} chars, returncode={process.returncode}")
+
             # Log stderr if present (might contain warnings/info)
             if stderr_str.strip():
-                logger.debug(f"[{self.name}] stderr: {stderr_str}")
+                logger.warning(f"[{self.name}] stderr: {stderr_str[:500]}")  # Limit to 500 chars
+
+            # Log first and last part of stdout for diagnostics
+            if stdout_str:
+                logger.debug(f"[{self.name}] stdout (first 300 chars): {stdout_str[:300]}")
+                if len(stdout_str) > 600:
+                    logger.debug(f"[{self.name}] stdout (last 300 chars): ...{stdout_str[-300:]}")
+            else:
+                logger.error(f"[{self.name}] CLI returned EMPTY stdout!")
 
             response = await self.parse_response(stdout_str, stderr_str)
             logger.info(f"[{self.name}] Response received (length: {len(response)} chars)")
