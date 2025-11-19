@@ -13,8 +13,10 @@ class ClaudeAgent(JSONCLIAgent):
     """
     Agent implementation for Claude Code CLI.
 
-    Uses the Claude Code CLI with --json flag for structured output.
-    Command format: claude --json -p "<prompt>"
+    Uses the Claude Code CLI with --print and --output-format json for structured output.
+    Command format: claude --print --output-format json "<prompt>"
+
+    Supports JSON schema via --json-schema flag for structured validation.
     """
 
     def __init__(
@@ -37,17 +39,21 @@ class ClaudeAgent(JSONCLIAgent):
         """
         Build the Claude Code CLI command.
 
+        Uses --print for non-interactive mode and --output-format json for
+        structured output.
+
         Args:
             message: The prompt/message to send to Claude
 
         Returns:
-            Command list: [claude_path, --json, -p, message]
+            Command list: [claude_path, --print, --output-format, json, message]
         """
         return [
             self.cli_path,
-            "--json",      # Get JSON output for easy parsing
-            "-p",          # Prompt flag
-            message
+            "--print",           # Non-interactive mode, print response and exit
+            "--output-format",   # Specify output format
+            "json",              # JSON format for parsing
+            message              # Positional prompt argument
         ]
 
     def extract_content_from_json(self, data: dict) -> str:
