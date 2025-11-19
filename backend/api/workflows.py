@@ -164,10 +164,37 @@ async def get_workflow(workflow_id: str):
     # Get LangGraph checkpoint data
     pending_checkpoint = None
     if workflow_id in active_workflows:
-        last_result = active_workflows[workflow_id].get("last_result")
-        if last_result:
-            # LangGraph interrupt returns data in specific format
-            pending_checkpoint = last_result
+        workflow_data = active_workflows[workflow_id]
+        compiled_workflow = workflow_data["compiled"]
+        config = {"configurable": {"thread_id": workflow_id}}
+
+        # Get current state from LangGraph checkpoint
+        try:
+            state = compiled_workflow.get_state(config)
+            print(f"[API] State for {workflow_id}: {state}")
+            print(f"[API] State values: {state.values if state else None}")
+            print(f"[API] State next: {state.next if state else None}")
+
+            # When workflow hits interrupt(), the state contains the checkpoint data
+            # The __interrupt__ field contains the data passed to interrupt()
+            if state and hasattr(state, 'values'):
+                state_dict = state.values
+                if '__interrupt__' in state_dict:
+                    # Extract the interrupt data (this is what we passed to interrupt())
+                    interrupt_data = state_dict['__interrupt__']
+                    print(f"[API] Found interrupt data: {interrupt_data}")
+
+                    # The interrupt data should be a tuple: (value,)
+                    if isinstance(interrupt_data, tuple) and len(interrupt_data) > 0:
+                        pending_checkpoint = interrupt_data[0]
+                    else:
+                        pending_checkpoint = interrupt_data
+                else:
+                    print(f"[API] No __interrupt__ in state values. Keys: {state_dict.keys() if isinstance(state_dict, dict) else 'not a dict'}")
+        except Exception as e:
+            print(f"[API] Error getting checkpoint state: {e}")
+            import traceback
+            traceback.print_exc()
 
     workflow_dict = dict(workflow_row)
     # Convert string timestamps to datetime
