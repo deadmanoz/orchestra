@@ -58,7 +58,6 @@ class ClaudeAgent(JSONCLIAgent):
             "--verbose",         # Required when using stream-json with stdin (auto-print mode)
             "--output-format",   # Specify output format
             "stream-json",       # Stream JSON to avoid 10KB truncation bug
-            "--yolo",            # Auto-approve all tool use (non-interactive)
         ]
 
     def extract_content_from_json(self, data: dict) -> str:

@@ -236,8 +236,8 @@ class JSONCLIAgent(CLIAgent):
 
         if len(lines) > 1:
             # Try to find complete JSON objects in each line
-            # For stream-json with --verbose, look specifically for type: "result"
-            result_json = None
+            # For stream-json with --verbose, look specifically for type: "result" or "assistant"
+            result_candidates = []
             valid_json_lines = []
 
             for idx, line in enumerate(lines):
@@ -253,19 +253,28 @@ class JSONCLIAgent(CLIAgent):
                         # Look for the actual response (not system/thinking/error messages)
                         # Claude CLI can return type=result or type=assistant depending on version/mode
                         if isinstance(obj, dict) and obj.get('type') in ('result', 'assistant'):
-                            result_json = line
+                            result_candidates.append((idx, line, obj))
                             logger.info(f"[_extract_json_from_output] ✓ Found {obj_type} message on line {idx}")
                     except Exception as e:
                         logger.debug(f"[_extract_json_from_output] Line {idx} failed to parse: {e}")
                         continue
 
-            # Prefer the result message if found, otherwise take the last valid JSON
+            # Choose the best result message
+            # When tools are used, there are multiple assistant messages:
+            # - First ones have tool_use blocks (intermediate)
+            # - Last one has text blocks (final response)
+            # Prefer the LAST assistant message that has text content
+            result_json = None
+            if result_candidates:
+                # Take the LAST result/assistant message (most recent response)
+                result_json = result_candidates[-1][1]
+                logger.info(f"[_extract_json_from_output] Using LAST result/assistant message (line {result_candidates[-1][0]})")
+
             if result_json:
-                logger.info(f"[_extract_json_from_output] Using result-type message")
                 cleaned = result_json
             elif valid_json_lines:
-                logger.error(f"[_extract_json_from_output] CRITICAL: No result-type message found in stream-json output!")
-                logger.error(f"[_extract_json_from_output] Found {len(valid_json_lines)} JSON objects but none had type='result'")
+                logger.error(f"[_extract_json_from_output] CRITICAL: No result/assistant message found in stream-json output!")
+                logger.error(f"[_extract_json_from_output] Found {len(valid_json_lines)} JSON objects but none had type='result' or 'assistant'")
                 logger.error(f"[_extract_json_from_output] This likely means Claude CLI failed or was interrupted before completing")
 
                 # Log types of all messages found
