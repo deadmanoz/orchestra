@@ -198,19 +198,28 @@ class JSONCLIAgent(CLIAgent):
         lines = cleaned.strip().split('\n')
         if len(lines) > 1:
             # Try to find complete JSON objects in each line
+            # For stream-json with --verbose, look specifically for type: "result"
+            result_json = None
             valid_json_lines = []
+
             for line in lines:
                 line = line.strip()
                 if line.startswith('{') and line.endswith('}'):
                     try:
-                        json.loads(line)  # Validate it's proper JSON
+                        obj = json.loads(line)
                         valid_json_lines.append(line)
+
+                        # Look for the result message (not system/thinking messages)
+                        if isinstance(obj, dict) and obj.get('type') == 'result':
+                            result_json = line
                     except:
                         continue
 
-            # If we found valid JSON lines, merge them or take the last one
-            if valid_json_lines:
-                # For stream-json, the last complete object is usually the final result
+            # Prefer the result message if found, otherwise take the last valid JSON
+            if result_json:
+                cleaned = result_json
+            elif valid_json_lines:
+                # Fallback: take the last complete object
                 cleaned = valid_json_lines[-1]
 
         # Try to find JSON objects in the output
