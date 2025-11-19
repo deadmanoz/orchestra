@@ -1,6 +1,7 @@
 from typing import Optional, List
 from backend.agents.base import AgentInterface
 from backend.agents.mock_agent import MockAgent
+from backend.agents.claude_agent import ClaudeAgent
 from backend.config import settings
 
 class AgentFactory:
@@ -21,13 +22,46 @@ class AgentFactory:
         if self._use_mocks:
             agent = MockAgent(name=name, agent_type="mock", role=role, workspace_path=workspace_path)
         else:
-            # TODO: Create real CLI/API agents when ready
-            agent = MockAgent(name=name, agent_type="mock", role=role, workspace_path=workspace_path)
+            # Create real CLI agents based on agent name
+            agent = self._create_cli_agent(name, role, workspace_path)
 
         await agent.start()
         self._agents[agent_key] = agent
 
         return agent
+
+    def _create_cli_agent(self, name: str, role: str, workspace_path: Optional[str]) -> AgentInterface:
+        """
+        Create a CLI agent based on the agent name.
+
+        Args:
+            name: Agent name (e.g., "claude_planner", "codex_reviewer")
+            role: Agent role (e.g., "planning", "review")
+            workspace_path: Path to the workspace
+
+        Returns:
+            CLI agent instance
+        """
+        # Determine agent type from name prefix
+        if name.startswith("claude"):
+            return ClaudeAgent(
+                name=name,
+                role=role,
+                workspace_path=workspace_path
+            )
+        # TODO: Add Codex and Gemini agents
+        # elif name.startswith("codex"):
+        #     return CodexAgent(name=name, role=role, workspace_path=workspace_path)
+        # elif name.startswith("gemini"):
+        #     return GeminiAgent(name=name, role=role, workspace_path=workspace_path)
+        else:
+            # Fallback to mock for unknown agent types
+            return MockAgent(
+                name=name,
+                agent_type="unknown",
+                role=role,
+                workspace_path=workspace_path
+            )
 
     async def get_review_agents(self, workspace_path: Optional[str] = None) -> List[AgentInterface]:
         """Get all review agents"""

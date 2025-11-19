@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     agent_port_range_end: int = 3799
     agent_timeout: int = 300  # 5 minutes
 
+    # CLI Agent Paths
+    claude_cli_path: str = "claude"  # Path to Claude Code CLI
+    codex_cli_path: str = "codex"    # Path to Codex CLI
+    gemini_cli_path: str = "gemini"  # Path to Gemini CLI
+
     # LangGraph
     langgraph_checkpoint_db: str = "./data/orchestra.db"
 
