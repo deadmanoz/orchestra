@@ -27,12 +27,14 @@ class CLIAgent(AgentInterface):
         agent_type: str,
         role: str = "general",
         workspace_path: Optional[str] = None,
-        timeout: int = 300
+        timeout: int = 300,
+        use_stdin: bool = False
     ):
         super().__init__(name, agent_type)
         self.role = role
         self.workspace_path = workspace_path or "."
         self.timeout = timeout
+        self.use_stdin = use_stdin  # Whether to pass message via stdin instead of CLI args
         self.process: Optional[asyncio.subprocess.Process] = None
 
     @abstractmethod
@@ -85,14 +87,19 @@ class CLIAgent(AgentInterface):
 
         # Get the CLI command
         command = self.get_cli_command(content)
-        logger.debug(f"[{self.name}] Command: {' '.join(command)}... (will send {len(content)} chars via stdin)")
+
+        if self.use_stdin:
+            logger.debug(f"[{self.name}] Command: {' '.join(command)} (will send {len(content)} chars via stdin)")
+        else:
+            logger.debug(f"[{self.name}] Command: {' '.join(command[:5])}... (message in args)")
 
         try:
             # Execute the CLI command
-            # Pass message via stdin for better handling of multi-line prompts
+            # Pass message via stdin if use_stdin=True, for better handling of multi-line prompts
+            stdin_pipe = asyncio.subprocess.PIPE if self.use_stdin else None
             process = await asyncio.create_subprocess_exec(
                 *command,
-                stdin=asyncio.subprocess.PIPE,
+                stdin=stdin_pipe,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.workspace_path
@@ -100,12 +107,18 @@ class CLIAgent(AgentInterface):
 
             self.process = process
 
-            # Send the message via stdin and wait for completion with timeout
+            # Send the message via stdin if enabled, otherwise just wait
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(input=content.encode('utf-8')),
-                    timeout=self.timeout
-                )
+                if self.use_stdin:
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(input=content.encode('utf-8')),
+                        timeout=self.timeout
+                    )
+                else:
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=self.timeout
+                    )
             except asyncio.TimeoutError:
                 # Kill the process if it times out
                 process.kill()

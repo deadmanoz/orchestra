@@ -31,7 +31,8 @@ class ClaudeAgent(JSONCLIAgent):
             agent_type="claude",
             role=role,
             workspace_path=workspace_path,
-            timeout=timeout or settings.agent_timeout
+            timeout=timeout or settings.agent_timeout,
+            use_stdin=True  # Claude CLI works better with stdin for stream-json
         )
         self.cli_path = settings.claude_cli_path
 
