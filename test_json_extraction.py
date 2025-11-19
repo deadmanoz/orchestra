@@ -52,6 +52,26 @@ def test_json_extraction():
             '{"response": {"content": "Hello world", "metadata": {}}}',
             '{"response": {"content": "Hello world", "metadata": {}}}'
         ),
+        # Case 7: JSON with braces in string values (CRITICAL for bug fix)
+        (
+            '{"result": "Code: { name: string } and more text"}',
+            '{"result": "Code: { name: string } and more text"}'
+        ),
+        # Case 8: Complex nested with braces in strings
+        (
+            '{"type": "result", "data": {"code": "interface X { a: number; }", "nested": {}}}',
+            '{"type": "result", "data": {"code": "interface X { a: number; }", "nested": {}}}'
+        ),
+        # Case 9: Escaped quotes in string
+        (
+            r'{"msg": "He said \"hello\""}',
+            r'{"msg": "He said \"hello\""}'
+        ),
+        # Case 10: Real-world example with markdown code block
+        (
+            '{"result": "Plan:\\n```typescript\\ninterface Config {\\n  name: string;\\n}\\n```"}',
+            '{"result": "Plan:\\n```typescript\\ninterface Config {\\n  name: string;\\n}\\n```"}'
+        ),
     ]
 
     print("Testing JSON extraction...")

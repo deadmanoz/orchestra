@@ -180,6 +180,7 @@ class JSONCLIAgent(CLIAgent):
         - Output contains ANSI escape codes
         - JSON is surrounded by progress indicators or warnings
         - Multiple JSON objects are present (takes the last one)
+        - Braces inside JSON string values (doesn't count them)
 
         Args:
             output: Raw stdout from CLI
@@ -192,21 +193,41 @@ class JSONCLIAgent(CLIAgent):
         cleaned = ansi_escape.sub('', output)
 
         # Try to find JSON objects in the output
-        # Look for content between { and } (handles nested braces)
+        # This is a state machine that tracks:
+        # - Whether we're inside a string literal
+        # - The brace depth (only counting structural braces, not those in strings)
         brace_count = 0
         json_start = -1
         json_candidates = []
+        in_string = False
+        escape_next = False
 
         for i, char in enumerate(cleaned):
-            if char == '{':
-                if brace_count == 0:
-                    json_start = i
-                brace_count += 1
-            elif char == '}':
-                brace_count -= 1
-                if brace_count == 0 and json_start != -1:
-                    json_candidates.append(cleaned[json_start:i+1])
-                    json_start = -1
+            # Handle escape sequences in strings
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+
+            # Handle string boundaries (only if not escaped)
+            if char == '"':
+                in_string = not in_string
+                continue
+
+            # Only count braces when NOT inside a string
+            if not in_string:
+                if char == '{':
+                    if brace_count == 0:
+                        json_start = i
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and json_start != -1:
+                        json_candidates.append(cleaned[json_start:i+1])
+                        json_start = -1
 
         # If we found JSON candidates, return the last one (most likely the actual response)
         if json_candidates:
