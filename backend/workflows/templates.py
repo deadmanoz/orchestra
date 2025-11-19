@@ -12,6 +12,10 @@ The user has the following requirements:
 {requirements}
 
 Please create a detailed development plan that addresses these requirements.
+
+IMPORTANT: Respond directly with your plan. Do NOT use any tools or try to read files.
+Base your plan on the requirements provided above.
+
 Include:
 - Architecture overview
 - Implementation steps
@@ -19,7 +23,8 @@ Include:
 - Potential challenges
 
 Your plan will be reviewed by multiple REVIEW AGENTS before implementation.
-"""
+
+Provide your complete plan in your response."""
 
     @staticmethod
     def planning_revision(current_plan: str, review_feedback: list[dict]) -> str:
