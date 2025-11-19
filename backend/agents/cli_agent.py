@@ -196,31 +196,45 @@ class JSONCLIAgent(CLIAgent):
         # Handle stream-json format (newline-delimited JSON)
         # If output contains multiple lines with JSON objects, try to combine them
         lines = cleaned.strip().split('\n')
+
+        logger.debug(f"[_extract_json_from_output] Total lines in output: {len(lines)}")
+
         if len(lines) > 1:
             # Try to find complete JSON objects in each line
             # For stream-json with --verbose, look specifically for type: "result"
             result_json = None
             valid_json_lines = []
 
-            for line in lines:
+            for idx, line in enumerate(lines):
                 line = line.strip()
                 if line.startswith('{') and line.endswith('}'):
                     try:
                         obj = json.loads(line)
                         valid_json_lines.append(line)
 
+                        obj_type = obj.get('type', 'no-type')
+                        logger.debug(f"[_extract_json_from_output] Line {idx}: type={obj_type}, length={len(line)}")
+
                         # Look for the result message (not system/thinking messages)
                         if isinstance(obj, dict) and obj.get('type') == 'result':
                             result_json = line
-                    except:
+                            logger.info(f"[_extract_json_from_output] ✓ Found result-type message on line {idx}")
+                    except Exception as e:
+                        logger.debug(f"[_extract_json_from_output] Line {idx} failed to parse: {e}")
                         continue
 
             # Prefer the result message if found, otherwise take the last valid JSON
             if result_json:
+                logger.info(f"[_extract_json_from_output] Using result-type message")
                 cleaned = result_json
             elif valid_json_lines:
-                # Fallback: take the last complete object
+                logger.warning(f"[_extract_json_from_output] No result-type found! Using last of {len(valid_json_lines)} JSON objects")
+                logger.warning(f"[_extract_json_from_output] Last object preview: {valid_json_lines[-1][:200]}...")
                 cleaned = valid_json_lines[-1]
+            else:
+                logger.error(f"[_extract_json_from_output] No valid JSON lines found!")
+        else:
+            logger.debug(f"[_extract_json_from_output] Single line output, skipping multi-line handling")
 
         # Try to find JSON objects in the output
         # This is a state machine that tracks:
