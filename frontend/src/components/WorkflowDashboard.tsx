@@ -10,7 +10,9 @@ interface Props {
 
 // CSS animation for spinning loader
 const spinAnimation = {
-  display: 'inline-block',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   animation: 'spin 1s linear infinite',
 } as const;
 
