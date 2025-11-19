@@ -4,8 +4,9 @@ React + TypeScript frontend for the Orchestra multi-agent orchestration platform
 
 ## Features
 
-- **Workflow Creation**: Start new orchestration workflows with custom prompts
-- **Real-time Updates**: WebSocket integration for live workflow status updates
+- **Workflow Creation**: Start new orchestration workflows with custom prompts and workspace paths
+- **Real-time Updates**: WebSocket integration with automatic reconnection for live workflow status updates
+- **Error Resilience**: React Error Boundary for graceful error handling and recovery
 - **Checkpoint Editor**: Interactive editor for reviewing and editing agent outputs at human-in-the-loop checkpoints
 - **Workflow Dashboard**: Real-time monitoring of agent executions, messages, and workflow progress
 - **Type-safe API**: Full TypeScript support with TanStack Query for data fetching
@@ -112,6 +113,7 @@ Form for starting new workflows with:
 - Workflow name
 - Type selection (plan_review, implementation, custom)
 - Initial prompt textarea
+- Workspace path input (optional) for codebase-specific workflows
 
 ### WorkflowDashboard
 
@@ -132,11 +134,16 @@ Interactive checkpoint UI featuring:
 
 ## WebSocket Updates
 
-The frontend automatically connects to the workflow WebSocket for real-time updates:
+The frontend automatically connects to the workflow WebSocket for real-time updates with automatic reconnection on connection loss:
 
 - `status_update` - Workflow status changes
 - `checkpoint_ready` - New checkpoint available for review
 - `error` - Error notifications
+
+The WebSocket connection includes:
+- Automatic reconnection with exponential backoff
+- Error handling for connection failures
+- Graceful cleanup on component unmount
 
 ## Type Safety
 
