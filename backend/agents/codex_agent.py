@@ -5,20 +5,21 @@ import logging
 from typing import List
 from pathlib import Path
 
-from backend.agents.cli_agent import JSONCLIAgent
+from backend.agents.cli_agent import CLIAgent, CLIAgentError
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class CodexAgent(JSONCLIAgent):
+class CodexAgent(CLIAgent):
     """
     Agent implementation for Codex CLI.
 
-    Uses Codex CLI with --json and --output-schema flags for structured output.
-    Command format: codex --json --quiet --output-schema <schema> -p "<prompt>"
+    Uses `codex exec` for non-interactive execution with automatic approval.
+    Command format: codex exec --full-auto "<prompt>"
 
-    Particularly powerful for code reviews due to structured schema support.
+    Note: Codex CLI outputs plain text, not JSON. The --output-schema feature
+    from our initial research is not available in the actual CLI.
     """
 
     def __init__(
@@ -51,6 +52,8 @@ class CodexAgent(JSONCLIAgent):
         """
         Build the Codex CLI command.
 
+        Uses `codex exec` for non-interactive execution.
+
         Args:
             message: The prompt/message to send to Codex
 
@@ -59,65 +62,45 @@ class CodexAgent(JSONCLIAgent):
         """
         command = [
             self.cli_path,
-            "--json",      # JSON output for parsing
-            "--quiet",     # Suppress interactive UI elements
+            "exec",        # Non-interactive subcommand
+            "--full-auto", # Low-friction sandboxed automatic execution
         ]
 
-        # Add output schema for structured reviews
-        if self.use_review_schema and self.role == "review":
-            command.extend([
-                "--output-schema",
-                str(self.review_schema_path)
-            ])
-
-        # Add the prompt
-        command.extend(["-p", message])
+        # Add the prompt as argument
+        command.append(message)
 
         return command
 
-    def extract_content_from_json(self, data: dict) -> str:
+    async def parse_response(self, stdout: str, stderr: str) -> str:
         """
-        Extract content from Codex's JSON response.
+        Parse Codex's plain text response.
 
-        When using --output-schema, Codex returns data conforming to our schema.
-        For non-schema mode, handle standard Codex JSON patterns.
+        Codex exec outputs plain text, not JSON, so we override the
+        JSONCLIAgent's JSON parsing behavior.
 
         Args:
-            data: Parsed JSON response from Codex
+            stdout: Standard output from Codex
+            stderr: Standard error from Codex
 
         Returns:
-            The extracted message content or formatted structured data
+            The response text
         """
-        # If using review schema, data should already match our schema
+        if not stdout.strip():
+            raise CLIAgentError(f"Agent {self.name} returned empty output")
+
+        # Codex exec outputs plain text directly
+        # For review role, we can try to structure it, but for now just return it
+        response = stdout.strip()
+
+        # If using review schema, try to parse and format the response
         if self.use_review_schema and self.role == "review":
-            return self._format_structured_review(data)
+            # Codex doesn't natively support JSON schema output via CLI
+            # So we just return the text response for now
+            # In the future, we could parse the text and convert to structured format
+            logger.info(f"[{self.name}] Review schema requested but Codex exec returns plain text")
+            return f"# Review by {self.name}\n\n{response}"
 
-        # Handle standard Codex JSON response patterns
-        if isinstance(data, dict):
-            # Pattern 1: Direct 'content' field
-            if 'content' in data:
-                return data['content']
-
-            # Pattern 2: 'result' field
-            if 'result' in data:
-                return data['result']
-
-            # Pattern 3: 'message' field
-            if 'message' in data:
-                return data['message']
-
-            # Pattern 4: 'output' field
-            if 'output' in data:
-                return data['output']
-
-            # Pattern 5: Nested in 'response'
-            if 'response' in data and isinstance(data['response'], dict):
-                if 'content' in data['response']:
-                    return data['response']['content']
-
-        # Fallback to parent class behavior
-        logger.warning(f"[{self.name}] Unexpected JSON structure, using fallback")
-        return super().extract_content_from_json(data)
+        return response
 
     def _format_structured_review(self, review_data: dict) -> str:
         """

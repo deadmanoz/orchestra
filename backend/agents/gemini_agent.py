@@ -39,18 +39,20 @@ class GeminiAgent(JSONCLIAgent):
         """
         Build the Gemini CLI command.
 
+        Uses positional prompt with --output-format json and --yolo for
+        non-interactive execution.
+
         Args:
             message: The prompt/message to send to Gemini
 
         Returns:
-            Command list: [gemini_path, -p, message, --output-format, json]
+            Command list with appropriate flags
         """
         return [
             self.cli_path,
-            "-p",                  # Prompt flag
-            message,
-            "--output-format",     # Specify output format
-            "json"                 # JSON format for parsing
+            "--output-format", "json",  # JSON output for parsing
+            "--yolo",                    # Auto-approve all actions (non-interactive)
+            message                      # Positional prompt (not -p flag)
         ]
 
     def extract_content_from_json(self, data: dict) -> str:
