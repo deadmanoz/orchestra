@@ -4,9 +4,10 @@ from backend.agents.base import AgentInterface
 class MockAgent(AgentInterface):
     """Mock agent for development without real CLI tools"""
 
-    def __init__(self, name: str, agent_type: str, role: str = "general"):
+    def __init__(self, name: str, agent_type: str, role: str = "general", workspace_path: str = None):
         super().__init__(name, agent_type)
         self.role = role
+        self.workspace_path = workspace_path
 
     async def start(self):
         await asyncio.sleep(0.5)  # Simulate startup
@@ -28,7 +29,8 @@ class MockAgent(AgentInterface):
             "name": self.name,
             "type": self.agent_type,
             "status": self.status,
-            "role": self.role
+            "role": self.role,
+            "workspace_path": self.workspace_path
         }
 
     async def stop(self):

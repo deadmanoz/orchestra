@@ -1,118 +1,306 @@
-# 🎼 Orchestra
+# 🎭 Orchestra
 
-Multi-Agent Orchestration Platform with Human-in-the-Loop Checkpoints
+Multi-agent orchestration platform with human-in-the-loop checkpoints for coordinating CLI coding agents.
 
 ## Overview
 
-Orchestra enables workflows where multiple AI agents (like Claude Code, OpenAI Codex, Gemini) collaborate on tasks with mandatory human review at every handoff point. Built with LangGraph for workflow orchestration, FastAPI for the backend, and React for the frontend.
+Orchestra provides a web interface for orchestrating multiple AI coding agents (Claude Code, OpenAI Codex, etc.) with mandatory human review checkpoints between agent handoffs. This eliminates the manual copy-paste workflow when coordinating multiple agents.
+
+### Key Features
+
+- **Multi-Agent Workflows**: Coordinate multiple agents in structured workflows
+- **Human-in-the-Loop**: Mandatory checkpoints for reviewing and editing agent outputs
+- **Real-time Updates**: WebSocket support for live workflow monitoring
+- **Plan-Review Pattern**: Built-in workflow for iterative planning with multi-agent review
+- **Persistent State**: SQLite-based checkpointing for workflow resumption
+- **Type-Safe**: Full TypeScript frontend and Python type hints
 
 ## Architecture
 
-- **Backend**: Python FastAPI + LangGraph
+```
+┌─────────────┐     HTTP/WS      ┌──────────────┐     LangGraph     ┌────────────┐
+│   React     │ ←──────────────→ │   FastAPI    │ ←───────────────→ │   Agents   │
+│  Frontend   │                  │   Backend    │                   │  (Mocks)   │
+└─────────────┘                  └──────────────┘                   └────────────┘
+                                         │
+                                         ↓
+                                  ┌──────────────┐
+                                  │   SQLite     │
+                                  │  Checkpoint  │
+                                  └──────────────┘
+```
+
+### Components
+
 - **Frontend**: React + TypeScript + TanStack Query
-- **Database**: SQLite (with LangGraph checkpointing)
-- **Agents**: Mock agents for development, pluggable CLI/API agents
+- **Backend**: FastAPI + LangGraph + AsyncSqliteSaver
+- **Agents**: Mock agents (ready for real CLI integration)
+- **Database**: SQLite for workflows, checkpoints, and messages
 
 ## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- pip and npm
 
 ### Backend Setup
 
 ```bash
-# Create virtual environment
+# Create and activate virtual environment
 python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 
-# Run backend
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your API keys if using real agents
+
+# Initialize database
+python -m backend.db.connection
+
+# Run backend server
 python -m backend.main
 ```
 
-Backend will be available at: http://localhost:8000
-API docs at: http://localhost:8000/docs
+Backend will be available at `http://localhost:3030`
 
-### Frontend Setup (Coming Soon)
+API docs: `http://localhost:3030/docs`
+
+### Frontend Setup
 
 ```bash
 cd frontend
+
+# Install dependencies
 npm install
+
+# Run development server
 npm run dev
 ```
 
-## Features
+Frontend will be available at `http://localhost:5173`
 
-### Current (MVP)
-- ✅ Plan-Review workflow with human checkpoints
-- ✅ Mock agents for development
-- ✅ LangGraph-based orchestration
-- ✅ SQLite persistence with automatic checkpointing
-- ✅ REST API for workflow management
-
-### Coming Soon
-- 🔄 React frontend with checkpoint editor
-- 🔄 WebSocket real-time updates
-- 🔄 CLI agent integration (Claude Code, Codex, etc.)
-- 🔄 Workflow visualization
-- 🔄 Export to markdown/PDF
-
-## Workflow Example
-
-### Plan-Review Cycle
-
-1. **Planning Agent** creates initial plan
-2. **Human Checkpoint**: User reviews and edits plan
-3. **Review Agents** (3 agents in parallel) provide feedback
-4. **Human Checkpoint**: User consolidates feedback
-5. Loop back to step 1 or approve final plan
-
-## Development
-
-### Testing the Backend
+### Running Tests
 
 ```bash
-# Test health endpoint
-curl http://localhost:8000/health
+# Backend tests (50 tests total)
+pytest tests/ -v
 
-# Create a workflow
-curl -X POST http://localhost:8000/api/workflows \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Test Plan Review",
-    "type": "plan_review",
-    "initial_prompt": "Create a plan for building a todo app"
-  }'
+# Frontend build test
+cd frontend && npm run build
 ```
 
-### Project Structure
+## Usage
+
+### 1. Create a Workflow
+
+1. Open `http://localhost:5173` in your browser
+2. Fill in the workflow creation form:
+   - **Name**: Descriptive name for your workflow
+   - **Type**: Select "Plan & Review" for the default workflow
+   - **Initial Prompt**: Describe what you want to build
+
+Example prompt:
+```
+Build a REST API for a todo application with user authentication,
+CRUD operations, and PostgreSQL database.
+```
+
+### 2. Review Checkpoints
+
+When the workflow reaches a checkpoint, you'll see:
+
+- **Agent Outputs**: Results from planning/review agents
+- **Editable Content**: The current plan or implementation
+- **Instructions**: What to do at this checkpoint
+
+Actions:
+- **Edit** the content directly in the editor
+- **Add notes** for the next iteration
+- **Approve** to continue
+- **Revise** to loop back with changes
+- **Reject** to stop the workflow
+
+### 3. Monitor Progress
+
+The dashboard shows:
+- Workflow status and metadata
+- Agent execution history with timing
+- Recent messages and outputs
+- Real-time updates via WebSocket
+
+## Workflow: Plan & Review
+
+The default workflow implements an iterative planning process:
+
+1. **Planning Agent** creates initial plan
+2. **User Checkpoint** - Review and edit plan
+3. **Review Agents** (3) provide feedback in parallel:
+   - Architecture Reviewer
+   - Security Reviewer
+   - Implementation Reviewer
+4. **User Checkpoint** - Consolidate reviews
+5. Loop back to Planning Agent or approve final plan
+
+```mermaid
+graph TD
+    Start --> Planning[Planning Agent]
+    Planning --> CP1[Checkpoint: Review Plan]
+    CP1 --> Review[Review Agents x3]
+    Review --> CP2[Checkpoint: Consolidate]
+    CP2 -->|revise| Planning
+    CP2 -->|approve| End[Complete]
+```
+
+## Project Structure
 
 ```
 orchestra/
-├── backend/              # Python FastAPI backend
-│   ├── api/             # REST API endpoints
-│   ├── workflows/       # LangGraph workflows
-│   ├── agents/          # Agent interfaces
+├── backend/
+│   ├── agents/          # Agent implementations (mock + factory)
+│   ├── api/             # FastAPI routes and WebSocket handlers
+│   ├── db/              # Database schema and connection
 │   ├── models/          # Pydantic models
-│   ├── db/              # Database schema & connection
-│   └── utils/           # Utilities
-├── frontend/            # React frontend (coming soon)
-├── data/                # SQLite database
-└── tests/               # Tests
+│   ├── workflows/       # LangGraph workflow definitions
+│   ├── config.py        # Configuration management
+│   └── main.py          # FastAPI application entry point
+├── frontend/
+│   ├── src/
+│   │   ├── api/         # API client and WebSocket
+│   │   ├── components/  # React components
+│   │   ├── hooks/       # Custom React hooks
+│   │   └── types/       # TypeScript definitions
+│   ├── package.json
+│   └── vite.config.ts
+├── tests/               # Backend test suite (50 tests)
+├── data/                # SQLite databases (gitignored)
+├── requirements.txt     # Python dependencies
+├── pytest.ini          # Test configuration
+└── README.md
 ```
 
 ## Configuration
 
-Environment variables (`.env`):
+### Backend (.env)
 
-```env
+```bash
+# Environment
 ENVIRONMENT=development
-DEBUG=True
-USE_MOCK_AGENTS=True
-API_HOST=0.0.0.0
-API_PORT=8000
-CORS_ORIGINS=http://localhost:5173
+
+# Database
+DATABASE_PATH=data/orchestra.db
+LANGGRAPH_CHECKPOINT_DB=data/langgraph_checkpoints.db
+
+# CORS
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# API Keys (for real agents)
+ANTHROPIC_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
 ```
+
+### Frontend (vite.config.ts)
+
+Configured to proxy:
+- `/api/*` → `http://localhost:3030/api/*`
+- `/ws/*` → `ws://localhost:3030/ws/*`
+
+## Development
+
+### Adding New Workflows
+
+1. Create workflow class in `backend/workflows/`
+2. Inherit from LangGraph's `StateGraph`
+3. Define state schema with `TypedDict`
+4. Add nodes and edges
+5. Use `interrupt()` for checkpoints
+6. Register in `backend/api/workflows.py`
+
+Example:
+```python
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+class MyWorkflow:
+    async def setup(self):
+        self.checkpointer = await AsyncSqliteSaver.from_conn_string(db_path).__aenter__()
+
+    def compile(self):
+        graph = StateGraph(MyState)
+        graph.add_node("step1", self._step1_node)
+        # ... add more nodes
+        return graph.compile(checkpointer=self.checkpointer)
+```
+
+### Integrating Real CLI Agents
+
+Replace `MockAgent` in `backend/agents/`:
+
+1. Create agent class implementing `AgentInterface`
+2. Use subprocess pattern for CLI execution
+3. Implement `start()`, `stop()`, `execute()` methods
+4. Update `AgentFactory` to create real agents
+
+### API Endpoints
+
+- `GET /health` - Health check
+- `POST /api/workflows` - Create workflow
+- `GET /api/workflows/{id}` - Get workflow state
+- `POST /api/workflows/{id}/resume` - Resume from checkpoint
+- `WS /ws/{id}` - WebSocket for real-time updates
+
+Full API documentation available at `http://localhost:3030/docs`
+
+## Testing
+
+### Backend Tests
+
+50 tests across 5 test files:
+- `test_models.py` - Pydantic model validation (11 tests)
+- `test_agents.py` - Agent system (13 tests)
+- `test_database.py` - Database layer (6 tests)
+- `test_workflows.py` - Workflow orchestration (9 tests)
+- `test_api.py` - REST API endpoints (11 tests)
+
+Run tests:
+```bash
+pytest tests/ -v
+pytest tests/ -v --cov=backend  # With coverage
+pytest tests/ -k test_workflow  # Run specific tests
+```
+
+### Frontend Build
+
+```bash
+cd frontend
+npm run build      # Production build
+npm run lint       # Code quality check
+```
+
+## Contributing
+
+This is Phase 1 of Orchestra. Future enhancements:
+
+- [ ] Real CLI agent integration (Claude Code, Codex, Gemini)
+- [ ] Authentication and multi-user support
+- [ ] Workflow templates and customization
+- [ ] Export workflows to PDF/Markdown
+- [ ] Workflow visualization
+- [ ] Agent result caching
+- [ ] Parallel workflow execution
 
 ## License
 
 MIT
+
+## Acknowledgments
+
+Built with:
+- [LangGraph](https://github.com/langchain-ai/langgraph) - Workflow orchestration
+- [FastAPI](https://fastapi.tiangolo.com/) - Backend framework
+- [React](https://react.dev/) - Frontend framework
+- [TanStack Query](https://tanstack.com/query) - Data synchronization

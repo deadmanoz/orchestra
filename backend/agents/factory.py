@@ -10,7 +10,7 @@ class AgentFactory:
         self._agents: dict[str, AgentInterface] = {}
         self._use_mocks = settings.use_mock_agents
 
-    async def get_agent(self, role: str, name: str) -> AgentInterface:
+    async def get_agent(self, role: str, name: str, workspace_path: Optional[str] = None) -> AgentInterface:
         """Get or create an agent"""
         agent_key = f"{role}_{name}"
 
@@ -19,17 +19,17 @@ class AgentFactory:
 
         # Create new agent
         if self._use_mocks:
-            agent = MockAgent(name=name, agent_type="mock", role=role)
+            agent = MockAgent(name=name, agent_type="mock", role=role, workspace_path=workspace_path)
         else:
             # TODO: Create real CLI/API agents when ready
-            agent = MockAgent(name=name, agent_type="mock", role=role)
+            agent = MockAgent(name=name, agent_type="mock", role=role, workspace_path=workspace_path)
 
         await agent.start()
         self._agents[agent_key] = agent
 
         return agent
 
-    async def get_review_agents(self) -> List[AgentInterface]:
+    async def get_review_agents(self, workspace_path: Optional[str] = None) -> List[AgentInterface]:
         """Get all review agents"""
         review_agent_configs = [
             ("review", "claude_reviewer"),
@@ -39,7 +39,7 @@ class AgentFactory:
 
         agents = []
         for role, name in review_agent_configs:
-            agent = await self.get_agent(role, name)
+            agent = await self.get_agent(role, name, workspace_path=workspace_path)
             agents.append(agent)
 
         return agents

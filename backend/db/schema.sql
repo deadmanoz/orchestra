@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS workflows (
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'awaiting_checkpoint', 'completed', 'failed', 'cancelled')),
+    workspace_path TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
