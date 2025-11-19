@@ -8,12 +8,40 @@ interface Props {
   onReset: () => void;
 }
 
+// CSS animation for spinning clock
+const spinAnimation = {
+  display: 'inline-block',
+  animation: 'spin 2s linear infinite',
+} as const;
+
+// Inject keyframes into document (only once)
+if (typeof document !== 'undefined' && !document.getElementById('clock-spin-keyframes')) {
+  const style = document.createElement('style');
+  style.id = 'clock-spin-keyframes';
+  style.textContent = `
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 export default function WorkflowDashboard({ workflow, messages, executions, onReset }: Props) {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
         return <CheckCircle color="#51cf66" size={20} />;
       case 'running':
+        return (
+          <span style={spinAnimation}>
+            <Clock color="#ffd43b" size={20} />
+          </span>
+        );
       case 'paused':
         return <Clock color="#ffd43b" size={20} />;
       case 'failed':
