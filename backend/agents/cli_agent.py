@@ -151,20 +151,50 @@ class CLIAgent(AgentInterface):
             # Log raw output lengths for diagnostics
             logger.info(f"[{self.name}] Raw output: stdout={len(stdout_str)} chars, stderr={len(stderr_str)} chars, returncode={process.returncode}")
 
+            # DEBUG: Write full stdout to file for inspection
+            import os
+            debug_dir = Path("debug_output")
+            debug_dir.mkdir(exist_ok=True)
+            debug_file = debug_dir / f"{self.name}_output.txt"
+            with open(debug_file, 'w') as f:
+                f.write("=== FULL STDOUT ===\n")
+                f.write(stdout_str)
+                f.write("\n\n=== FULL STDERR ===\n")
+                f.write(stderr_str)
+            logger.info(f"[{self.name}] Full output written to {debug_file}")
+
             # Log stderr if present (might contain warnings/info)
             if stderr_str.strip():
                 logger.warning(f"[{self.name}] stderr: {stderr_str[:500]}")  # Limit to 500 chars
 
-            # Log first and last part of stdout for diagnostics
+            # Parse ALL JSON lines for debugging
             if stdout_str:
-                logger.debug(f"[{self.name}] stdout (first 300 chars): {stdout_str[:300]}")
-                if len(stdout_str) > 600:
-                    logger.debug(f"[{self.name}] stdout (last 300 chars): ...{stdout_str[-300:]}")
+                lines = stdout_str.strip().split('\n')
+                logger.info(f"[{self.name}] stdout has {len(lines)} lines")
+                for i, line in enumerate(lines):
+                    if line.strip().startswith('{'):
+                        try:
+                            obj = json.loads(line.strip())
+                            obj_type = obj.get('type', 'unknown')
+                            # Log structure of each message
+                            if obj_type == 'assistant' and 'message' in obj:
+                                msg = obj['message']
+                                content = msg.get('content', [])
+                                if isinstance(content, list):
+                                    block_types = [b.get('type') for b in content if isinstance(b, dict)]
+                                    logger.info(f"[{self.name}] Line {i}: type={obj_type}, content blocks: {block_types}")
+                                else:
+                                    logger.info(f"[{self.name}] Line {i}: type={obj_type}, content type: {type(content).__name__}")
+                            else:
+                                logger.info(f"[{self.name}] Line {i}: type={obj_type}")
+                        except:
+                            pass
             else:
                 logger.error(f"[{self.name}] CLI returned EMPTY stdout!")
 
             response = await self.parse_response(stdout_str, stderr_str)
             logger.info(f"[{self.name}] Response received (length: {len(response)} chars)")
+            logger.info(f"[{self.name}] Response preview: {response[:200]}")
 
             return response
 
