@@ -79,11 +79,11 @@ class AgentFactory:
 
     async def get_review_agents(self, workspace_path: Optional[str] = None) -> List[AgentInterface]:
         """Get all review agents"""
-        # Test Gemini with file-based stdout transport
+        # All reviewers now use file-based stdout transport (handles 10KB+ responses)
         review_agent_configs = [
-            # ("review", "claude_reviewer"),  # Disabled - not tested with file transport yet
-            # ("review", "codex_reviewer"),  # Disabled - already works, testing Gemini now
-            ("review", "gemini_reviewer")   # ACTIVE: Testing with file-based stdout
+            ("review", "claude_reviewer"),  # Claude Code CLI
+            ("review", "codex_reviewer"),   # Codex CLI
+            ("review", "gemini_reviewer")   # Gemini CLI
         ]
 
         agents = []
