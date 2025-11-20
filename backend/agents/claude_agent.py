@@ -40,12 +40,8 @@ class ClaudeAgent(JSONCLIAgent):
         """
         Build the Claude Code CLI command.
 
-        When Claude CLI receives input via stdin, it automatically enters "print" mode.
-        In print mode with stream-json, --verbose is required.
-
-        Note: Claude Code CLI has a known bug where --output-format json truncates
-        at fixed positions (4000, 6000, 8000, 10000, 12000, 16000 chars).
-        Using stream-json avoids this truncation.
+        Using --output-format json (not stream-json) to get complete response as single JSON blob.
+        stream-json has a bug where subprocess terminates before flushing final message to stdout.
 
         Args:
             message: The prompt/message to send to Claude (passed via stdin, not used here)
@@ -55,9 +51,8 @@ class ClaudeAgent(JSONCLIAgent):
         """
         return [
             self.cli_path,
-            "--verbose",         # Required when using stream-json with stdin (auto-print mode)
             "--output-format",   # Specify output format
-            "stream-json",       # Stream JSON to avoid 10KB truncation bug
+            "json",              # Single JSON blob (not streaming) to avoid truncation
         ]
 
     def extract_content_from_json(self, data: dict) -> str:
