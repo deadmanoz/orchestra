@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import re
+import tempfile
 from abc import abstractmethod
 from typing import Optional, List
 from pathlib import Path
@@ -93,17 +95,31 @@ class CLIAgent(AgentInterface):
         else:
             logger.debug(f"[{self.name}] Command: {' '.join(command[:5])}... (message in args)")
 
+        # Create temp file for stdout to avoid pipe buffering/truncation issues
+        # Claude CLI with --output-format json has known truncation bugs with stdout
+        stdout_file = None
         try:
-            # Execute the CLI command
+            # Create a temporary file for stdout
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                stdout_file = f.name
+
+            logger.debug(f"[{self.name}] Using temp file for stdout: {stdout_file}")
+
+            # Execute the CLI command with stdout redirected to file
             # Pass message via stdin if use_stdin=True, for better handling of multi-line prompts
             stdin_pipe = asyncio.subprocess.PIPE if self.use_stdin else None
 
+            # Build shell command with stdout redirection
+            # This bypasses Python's subprocess stdout buffering entirely
+            shell_command = ' '.join(command) + f' > "{stdout_file}"'
+            logger.debug(f"[{self.name}] Shell command: {shell_command}")
+
             # Start subprocess in new session to prevent interference when running
             # multiple instances in parallel (prevents terminal/signal conflicts)
-            process = await asyncio.create_subprocess_exec(
-                *command,
+            process = await asyncio.create_subprocess_shell(
+                shell_command,
                 stdin=stdin_pipe,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,  # Capture any stray output (should be empty)
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.workspace_path,
                 start_new_session=True  # Detach from controlling terminal
@@ -118,13 +134,13 @@ class CLIAgent(AgentInterface):
                     logger.info(f"[{self.name}] Sending {len(stdin_bytes)} bytes via stdin")
                     logger.debug(f"[{self.name}] Prompt preview (first 200 chars): {content[:200]!r}")
 
-                    stdout, stderr = await asyncio.wait_for(
+                    _, stderr = await asyncio.wait_for(
                         process.communicate(input=stdin_bytes),
                         timeout=self.timeout
                     )
-                    logger.info(f"[{self.name}] Process completed, parsing output...")
+                    logger.info(f"[{self.name}] Process completed, reading output from file...")
                 else:
-                    stdout, stderr = await asyncio.wait_for(
+                    _, stderr = await asyncio.wait_for(
                         process.communicate(),
                         timeout=self.timeout
                     )
@@ -144,9 +160,13 @@ class CLIAgent(AgentInterface):
                     f"Agent {self.name} failed with exit code {process.returncode}: {error_msg}"
                 )
 
-            # Parse the response
-            stdout_str = stdout.decode('utf-8', errors='replace')
+            # Read stdout from temp file (complete output, no truncation!)
+            with open(stdout_file, 'r', encoding='utf-8') as f:
+                stdout_str = f.read()
+
             stderr_str = stderr.decode('utf-8', errors='replace')
+
+            logger.info(f"[{self.name}] Read {len(stdout_str)} chars from output file")
 
             # Log raw output lengths for diagnostics
             logger.info(f"[{self.name}] Raw output: stdout={len(stdout_str)} chars, stderr={len(stderr_str)} chars, returncode={process.returncode}")
@@ -217,6 +237,13 @@ class CLIAgent(AgentInterface):
             raise CLIAgentError(f"Agent {self.name} encountered an error: {str(e)}")
         finally:
             self.process = None
+            # Clean up temp file
+            if stdout_file and os.path.exists(stdout_file):
+                try:
+                    os.unlink(stdout_file)
+                    logger.debug(f"[{self.name}] Cleaned up temp file: {stdout_file}")
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to delete temp file {stdout_file}: {e}")
 
     async def get_status(self) -> dict:
         """Get the current status of the agent"""
