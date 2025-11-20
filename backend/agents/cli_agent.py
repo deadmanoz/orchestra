@@ -168,6 +168,7 @@ class CLIAgent(AgentInterface):
                 logger.warning(f"[{self.name}] stderr: {stderr_str[:500]}")  # Limit to 500 chars
 
             # Parse ALL JSON lines for debugging
+            incomplete_json_count = 0
             if stdout_str:
                 lines = stdout_str.strip().split('\n')
                 logger.info(f"[{self.name}] stdout has {len(lines)} lines")
@@ -187,8 +188,18 @@ class CLIAgent(AgentInterface):
                                     logger.info(f"[{self.name}] Line {i}: type={obj_type}, content type: {type(content).__name__}")
                             else:
                                 logger.info(f"[{self.name}] Line {i}: type={obj_type}")
-                        except:
-                            pass
+                        except json.JSONDecodeError as e:
+                            incomplete_json_count += 1
+                            logger.warning(f"[{self.name}] ❌ Line {i}: INCOMPLETE/MALFORMED JSON - {e}")
+                            logger.warning(f"[{self.name}] Line {i} starts: {line[:200]!r}")
+                            logger.warning(f"[{self.name}] Line {i} ends: {line[-200:]!r}")
+                        except Exception as e:
+                            logger.debug(f"[{self.name}] Line {i}: Parse error - {e}")
+
+                if incomplete_json_count > 0:
+                    logger.error(f"[{self.name}] ❌ CRITICAL: Found {incomplete_json_count} incomplete JSON messages!")
+                    logger.error(f"[{self.name}] This means subprocess terminated before flushing complete output")
+                    logger.error(f"[{self.name}] Process returncode: {process.returncode}")
             else:
                 logger.error(f"[{self.name}] CLI returned EMPTY stdout!")
 
