@@ -31,7 +31,8 @@ class GeminiAgent(JSONCLIAgent):
             agent_type="gemini",
             role=role,
             workspace_path=workspace_path,
-            timeout=timeout or settings.agent_timeout
+            timeout=timeout or settings.agent_timeout,
+            use_stdin=True  # Use stdin to avoid argument length limits and work with file-based stdout
         )
         self.cli_path = settings.gemini_cli_path
 
@@ -39,11 +40,11 @@ class GeminiAgent(JSONCLIAgent):
         """
         Build the Gemini CLI command.
 
-        Uses positional prompt with --output-format json and --yolo for
-        non-interactive execution.
+        Uses stdin for input to work with file-based stdout redirection.
+        Gemini CLI reads from stdin when no positional prompt is provided.
 
         Args:
-            message: The prompt/message to send to Gemini
+            message: The prompt/message to send to Gemini (passed via stdin, not used here)
 
         Returns:
             Command list with appropriate flags
@@ -52,7 +53,7 @@ class GeminiAgent(JSONCLIAgent):
             self.cli_path,
             "--output-format", "json",  # JSON output for parsing
             "--yolo",                    # Auto-approve all actions (non-interactive)
-            message                      # Positional prompt (not -p flag)
+            # No positional argument - message passed via stdin
         ]
 
     def extract_content_from_json(self, data: dict) -> str:
