@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import Optional
 import uuid
-import asyncio
 from datetime import datetime
 import json
 import aiosqlite
-import os
 from pathlib import Path
 
 from backend.models.workflow import (
@@ -16,7 +14,6 @@ from backend.agents.factory import agent_factory
 from backend.db.connection import db
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
-from backend.api.websocket import broadcast_to_workflow
 from backend.services.workflow_manager import WorkflowStatusManager
 import logging
 
@@ -75,11 +72,16 @@ async def save_checkpoint_resolution(
         user_notes: User's notes if any
     """
     # Determine status based on action
+    # NOTE: Keep this in sync with checkpoint_manager.py status_map
     status_map = {
         "send_to_reviewers": "approved",
         "send_to_planner_for_revision": "approved",
+        "request_revision": "approved",
+        "approve_plan": "approved",
         "approve": "approved",
         "edit_and_continue": "edited",
+        "edit_prompt_and_revise": "edited",
+        "edit_full_prompt": "edited",
         "cancel": "rejected"
     }
     status = status_map.get(action, "approved")
