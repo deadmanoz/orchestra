@@ -41,37 +41,12 @@ function getWorkflowStatusMessage(
   pendingCheckpoint: Checkpoint | null,
   executions: AgentExecution[]
 ): { message: string; showSpinner: boolean } {
-  // Check if any agents are currently running
-  const runningAgents = executions.filter(e => e.status === 'running');
-
   if (workflow.status === 'completed') {
     return { message: 'Workflow completed successfully', showSpinner: false };
   }
 
   if (workflow.status === 'failed') {
     return { message: 'Workflow failed', showSpinner: false };
-  }
-
-  // Determine current stage based on checkpoint and running agents
-  if (runningAgents.length > 0) {
-    const agentTypes = runningAgents.map(a => a.agent_type);
-
-    if (agentTypes.includes('planning')) {
-      const iteration = pendingCheckpoint?.iteration ?? 0;
-      if (iteration === 0) {
-        return { message: 'Planning agent crafting initial plan...', showSpinner: true };
-      } else {
-        return { message: `Planning agent revising plan (iteration ${iteration + 1})...`, showSpinner: true };
-      }
-    }
-
-    if (agentTypes.includes('review')) {
-      const iteration = pendingCheckpoint?.iteration ?? 0;
-      const planVersion = iteration + 1;
-      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
-    }
-
-    return { message: 'Agents working...', showSpinner: true };
   }
 
   // If paused/awaiting checkpoint
@@ -97,7 +72,60 @@ function getWorkflowStatusMessage(
     return { message: 'Awaiting your input', showSpinner: false };
   }
 
+  // Workflow is running - determine what's happening
   if (workflow.status === 'running') {
+    // Check if any agents are currently running
+    const runningAgents = executions.filter(e => e.status === 'running');
+    const agentTypes = runningAgents.map(a => a.agent_type);
+
+    // If we have running agents, show status based on agent type
+    if (agentTypes.includes('planning')) {
+      const iteration = pendingCheckpoint?.iteration ?? 0;
+      if (iteration === 0) {
+        return { message: 'Planning agent crafting initial plan...', showSpinner: true };
+      } else {
+        return { message: `Planning agent revising plan (iteration ${iteration + 1})...`, showSpinner: true };
+      }
+    }
+
+    if (agentTypes.includes('review')) {
+      const iteration = pendingCheckpoint?.iteration ?? 0;
+      const planVersion = iteration + 1;
+      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
+    }
+
+    if (runningAgents.length > 0) {
+      return { message: 'Agents working...', showSpinner: true };
+    }
+
+    // No running agents yet - infer from workflow state
+    // Check if we have any executions at all
+    if (executions.length === 0) {
+      // Just started - must be planning agent starting
+      return { message: 'Planning agent crafting initial plan...', showSpinner: true };
+    }
+
+    // Check the most recent execution to infer what should happen next
+    const sortedExecutions = [...executions].sort((a, b) =>
+      new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
+    );
+    const lastExecution = sortedExecutions[0];
+
+    // If last execution was planning, reviewers should be next
+    if (lastExecution.agent_type === 'planning' && lastExecution.status === 'completed') {
+      const iteration = pendingCheckpoint?.iteration ?? 0;
+      const planVersion = iteration + 1;
+      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
+    }
+
+    // If last executions were reviews, planning agent should be next (revision)
+    const recentReviews = sortedExecutions.filter(e => e.agent_type === 'review' && e.status === 'completed');
+    if (recentReviews.length > 0) {
+      const iteration = (pendingCheckpoint?.iteration ?? 0) + 1;
+      return { message: `Planning agent revising plan (iteration ${iteration + 1})...`, showSpinner: true };
+    }
+
+    // Default fallback
     return { message: 'Workflow in progress...', showSpinner: true };
   }
 
@@ -169,6 +197,23 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
   const runningAgents = executions.filter(e => e.status === 'running');
   const latestRunningAgent = runningAgents.length > 0 ? runningAgents[runningAgents.length - 1] : null;
 
+  // Determine what timestamp to use for the timer
+  const getTimerStartTime = (): string | null => {
+    // If there's a running agent, use its start time
+    if (latestRunningAgent) {
+      return latestRunningAgent.started_at;
+    }
+
+    // If workflow is running but no running agents yet, use workflow's updated_at
+    if (workflow.status === 'running') {
+      return workflow.updated_at;
+    }
+
+    return null;
+  };
+
+  const timerStartTime = getTimerStartTime();
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Workflow Header */}
@@ -190,10 +235,10 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
                 getStatusIcon(workflow.status)
               )}
               <span>{statusInfo.message}</span>
-              {latestRunningAgent && (
+              {timerStartTime && (
                 <>
                   <span>•</span>
-                  <ElapsedTimer startTime={latestRunningAgent.started_at} />
+                  <ElapsedTimer startTime={timerStartTime} />
                 </>
               )}
             </div>
