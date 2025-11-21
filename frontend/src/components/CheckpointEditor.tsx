@@ -9,12 +9,47 @@ interface Props {
   checkpoint: Checkpoint;
 }
 
+// Format action names for display (remove underscores, capitalize)
+function formatActionName(action: string): string {
+  return action
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+// Get content labels based on checkpoint step
+function getContentLabels(stepName: string, isEditing: boolean): { title: string; editButton: string } {
+  if (stepName === 'edit_reviewer_prompt') {
+    return {
+      title: isEditing ? '✏️ Editing Reviewer Prompt' : '📝 Reviewer Prompt',
+      editButton: isEditing ? 'Preview' : 'Edit Reviewer Prompt'
+    };
+  } else if (stepName === 'edit_planner_prompt') {
+    return {
+      title: isEditing ? '✏️ Editing Planner Prompt' : '📝 Planner Prompt',
+      editButton: isEditing ? 'Preview' : 'Edit Planner Prompt'
+    };
+  } else if (stepName === 'reviews_ready_for_consolidation') {
+    return {
+      title: isEditing ? '✏️ Editing Consolidated Feedback' : '📊 Consolidated Review Feedback',
+      editButton: isEditing ? 'Preview' : 'Edit Consolidated Feedback'
+    };
+  } else {
+    // Default for plan_ready_for_review
+    return {
+      title: isEditing ? '✏️ Editing Plan' : '📋 Current Plan',
+      editButton: isEditing ? 'Preview' : 'Edit Plan'
+    };
+  }
+}
+
 export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
   const [editedContent, setEditedContent] = useState(checkpoint.editable_content || '');
   const [userNotes, setUserNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
 
   const resumeWorkflow = useResumeWorkflow(workflowId);
+  const contentLabels = getContentLabels(checkpoint.step_name ?? '', isEditing);
 
   // Safety check
   if (!checkpoint) {
@@ -132,11 +167,11 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
         })()
       )}
 
-      {/* Editable Content - The plan that can be edited before approval */}
+      {/* Editable Content - The plan/prompt that can be edited before approval */}
       <div style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <h4 style={{ margin: 0, fontSize: '1rem' }}>
-            {isEditing ? '✏️ Editing Plan' : '📋 Current Plan'}
+            {contentLabels.title}
           </h4>
           <button
             onClick={() => setIsEditing(!isEditing)}
@@ -153,7 +188,7 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
             }}
           >
             <Edit3 size={14} />
-            {isEditing ? 'Preview' : 'Edit Plan'}
+            {contentLabels.editButton}
           </button>
         </div>
         {isEditing ? (
@@ -243,7 +278,7 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
           }}
         >
           <Check size={20} />
-          {checkpoint.actions?.primary || 'Approve'}
+          {formatActionName(checkpoint.actions?.primary || 'approve')}
         </button>
 
         {checkpoint.actions?.secondary && checkpoint.actions.secondary.map((action) => (
@@ -266,8 +301,8 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
               gap: '0.5rem'
             }}
           >
-            {action === 'reject' && <X size={18} />}
-            {action}
+            {action === 'cancel' && <X size={18} />}
+            {formatActionName(action)}
           </button>
         ))}
       </div>
