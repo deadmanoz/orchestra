@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import WorkflowDashboard from './components/WorkflowDashboard';
+import WorkflowTimeline from './components/WorkflowTimeline';
 import CreateWorkflowForm from './components/CreateWorkflowForm';
 import CheckpointEditor from './components/CheckpointEditor';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -41,8 +42,14 @@ function App() {
                 workflow={workflowData.workflow}
                 messages={workflowData.recent_messages}
                 executions={workflowData.agent_executions}
+                pendingCheckpoint={workflowData.pending_checkpoint}
                 onReset={() => setCurrentWorkflowId(null)}
               />
+
+              {/* Workflow History Timeline */}
+              <ErrorBoundary>
+                <WorkflowTimeline workflowId={currentWorkflowId} />
+              </ErrorBoundary>
 
               {workflowData.pending_checkpoint && (
                 <ErrorBoundary>

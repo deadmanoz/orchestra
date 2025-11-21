@@ -31,7 +31,8 @@ class GeminiAgent(JSONCLIAgent):
             agent_type="gemini",
             role=role,
             workspace_path=workspace_path,
-            timeout=timeout or settings.agent_timeout
+            timeout=timeout or settings.agent_timeout,
+            use_stdin=True  # Use stdin to avoid argument length limits and work with file-based stdout
         )
         self.cli_path = settings.gemini_cli_path
 
@@ -39,11 +40,11 @@ class GeminiAgent(JSONCLIAgent):
         """
         Build the Gemini CLI command.
 
-        Uses positional prompt with --output-format json and --yolo for
-        non-interactive execution.
+        Uses stdin for input to work with file-based stdout redirection.
+        Gemini CLI reads from stdin when no positional prompt is provided.
 
         Args:
-            message: The prompt/message to send to Gemini
+            message: The prompt/message to send to Gemini (passed via stdin, not used here)
 
         Returns:
             Command list with appropriate flags
@@ -52,7 +53,7 @@ class GeminiAgent(JSONCLIAgent):
             self.cli_path,
             "--output-format", "json",  # JSON output for parsing
             "--yolo",                    # Auto-approve all actions (non-interactive)
-            message                      # Positional prompt (not -p flag)
+            # No positional argument - message passed via stdin
         ]
 
     def extract_content_from_json(self, data: dict) -> str:
@@ -69,23 +70,36 @@ class GeminiAgent(JSONCLIAgent):
             The extracted message content
         """
         if isinstance(data, dict):
-            # Pattern 1: Direct 'content' field
+            # Pattern 1: Direct 'response' field (Gemini CLI with --yolo + --output-format json)
+            # This is the most common pattern with Gemini CLI
+            if 'response' in data:
+                response = data['response']
+                if isinstance(response, str):
+                    return response
+                # If response is dict, try to extract text from it
+                if isinstance(response, dict):
+                    if 'text' in response:
+                        return response['text']
+                    if 'content' in response:
+                        return response['content']
+
+            # Pattern 2: Direct 'content' field
             if 'content' in data:
                 return data['content']
 
-            # Pattern 2: 'text' field (common in Gemini responses)
+            # Pattern 3: 'text' field (common in Gemini responses)
             if 'text' in data:
                 return data['text']
 
-            # Pattern 3: 'output' field
+            # Pattern 4: 'output' field
             if 'output' in data:
                 return data['output']
 
-            # Pattern 4: 'message' field
+            # Pattern 5: 'message' field
             if 'message' in data:
                 return data['message']
 
-            # Pattern 5: 'result' field
+            # Pattern 6: 'result' field
             if 'result' in data:
                 result = data['result']
                 if isinstance(result, str):
@@ -93,14 +107,14 @@ class GeminiAgent(JSONCLIAgent):
                 if isinstance(result, dict) and 'content' in result:
                     return result['content']
 
-            # Pattern 6: Nested in 'response'
+            # Pattern 7: Nested in 'response'
             if 'response' in data and isinstance(data['response'], dict):
                 if 'content' in data['response']:
                     return data['response']['content']
                 if 'text' in data['response']:
                     return data['response']['text']
 
-            # Pattern 7: Candidates array (Gemini API response format)
+            # Pattern 8: Candidates array (Gemini API response format)
             if 'candidates' in data and isinstance(data['candidates'], list) and len(data['candidates']) > 0:
                 candidate = data['candidates'][0]
                 if isinstance(candidate, dict):

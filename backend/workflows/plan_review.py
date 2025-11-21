@@ -24,6 +24,8 @@ class PlanReviewState(TypedDict):
     status: str
     user_edits: str
     next_step: str
+    reviewer_prompt: str  # Custom reviewer prompt (if user wants to edit full prompt)
+    planner_prompt: str  # Custom planner revision prompt (if user wants to edit full prompt)
 
 class PlanReviewWorkflow:
     """Implements the plan-review-iterate workflow with human checkpoints"""
@@ -47,15 +49,29 @@ class PlanReviewWorkflow:
         # Add nodes
         workflow.add_node("planning_agent", self._planning_agent_node)
         workflow.add_node("plan_checkpoint", self._plan_checkpoint_node)
+        workflow.add_node("edit_reviewer_prompt_checkpoint", self._edit_reviewer_prompt_checkpoint_node)
         workflow.add_node("review_agents", self._review_agents_node)
         workflow.add_node("review_checkpoint", self._review_checkpoint_node)
+        workflow.add_node("edit_planner_prompt_checkpoint", self._edit_planner_prompt_checkpoint_node)
 
         # Set entry point
         workflow.set_entry_point("planning_agent")
 
         # Define edges
         workflow.add_edge("planning_agent", "plan_checkpoint")
-        workflow.add_edge("plan_checkpoint", "review_agents")
+
+        # Conditional edge from plan checkpoint based on action
+        workflow.add_conditional_edges(
+            "plan_checkpoint",
+            lambda state: state.get("next_step", "review_agents"),
+            {
+                "edit_reviewer_prompt": "edit_reviewer_prompt_checkpoint",
+                "review_agents": "review_agents",
+                "end": END
+            }
+        )
+
+        workflow.add_edge("edit_reviewer_prompt_checkpoint", "review_agents")
         workflow.add_edge("review_agents", "review_checkpoint")
 
         # Conditional edge from review checkpoint
@@ -63,10 +79,13 @@ class PlanReviewWorkflow:
             "review_checkpoint",
             lambda state: state.get("next_step", "end"),
             {
+                "edit_planner_prompt": "edit_planner_prompt_checkpoint",
                 "planning_agent": "planning_agent",
                 "end": END
             }
         )
+
+        workflow.add_edge("edit_planner_prompt_checkpoint", "planning_agent")
 
         return workflow
 
@@ -77,15 +96,21 @@ class PlanReviewWorkflow:
         # Get planning agent
         planning_agent = await self.agent_factory.get_agent("planning", "claude_planner", workspace_path=self.workspace_path)
 
-        # Build prompt
-        if state.get("review_feedback"):
-            # Revision based on feedback
+        # Build prompt - check if user provided custom planner prompt
+        if state.get("planner_prompt"):
+            # Use custom planner prompt edited by user
+            print(f"[PlanningAgent] Using custom planner prompt edited by user")
+            prompt = state["planner_prompt"]
+        elif state.get("review_feedback"):
+            # Revision based on feedback - use default template
+            print(f"[PlanningAgent] Using default planning revision template")
             prompt = self.templates.planning_revision(
                 state.get("user_edits") or state["current_plan"],
                 state["review_feedback"]
             )
         else:
-            # Initial planning
+            # Initial planning - use default template
+            print(f"[PlanningAgent] Using default initial planning template")
             initial_message = state["messages"][-1].content
             prompt = self.templates.planning_initial(initial_message)
 
@@ -130,16 +155,97 @@ class PlanReviewWorkflow:
         human_input = interrupt(checkpoint_data)
 
         # Process human decision
+        action = human_input.get("action", "send_to_reviewers")
         edited_plan = human_input.get("edited_content", state["current_plan"])
 
-        return {
-            "user_edits": edited_plan,
-            "status": "ready_for_review",
-            "messages": [HumanMessage(
-                content=f"[User approved plan for review]",
-                name="user"
-            )]
+        # Route based on action
+        if action == "send_to_reviewers":
+            return {
+                "user_edits": edited_plan,
+                "status": "ready_for_review",
+                "next_step": "review_agents",
+                "messages": [HumanMessage(
+                    content=f"[User approved plan for review]",
+                    name="user"
+                )]
+            }
+        elif action == "edit_and_continue":
+            return {
+                "user_edits": edited_plan,
+                "status": "editing_reviewer_prompt",
+                "next_step": "edit_reviewer_prompt",
+                "messages": [HumanMessage(
+                    content=f"[User wants to edit full reviewer prompt]",
+                    name="user"
+                )]
+            }
+        else:  # cancel
+            return {
+                "status": "cancelled",
+                "next_step": "end",
+                "messages": [HumanMessage(
+                    content="[User cancelled workflow]",
+                    name="user"
+                )]
+            }
+
+    async def _edit_reviewer_prompt_checkpoint_node(self, state: PlanReviewState) -> dict:
+        """Human checkpoint for editing the complete reviewer prompt"""
+        print(f"[Checkpoint] Edit reviewer prompt - awaiting human edits")
+
+        # Generate the default reviewer prompt that will be sent to reviewers
+        plan_to_review = state.get("user_edits") or state["current_plan"]
+        default_reviewer_prompt = self.templates.review_request(plan_to_review, "REVIEW_AGENT")
+
+        checkpoint_data = {
+            "checkpoint_id": str(uuid.uuid4()),
+            "checkpoint_number": state["checkpoint_number"],
+            "step_name": "edit_reviewer_prompt",
+            "workflow_id": state["workflow_id"],
+            "iteration": state.get("iteration_count", 0),
+            "agent_outputs": [],
+            "instructions": (
+                "Edit the complete prompt that will be sent to all REVIEW AGENTS.\n\n"
+                "You can inject user feedback, directives, or additional context here.\n"
+                "The edited prompt will be sent to all reviewers (Claude, Codex, Gemini).\n\n"
+                "Tip: Add user feedback like this:\n"
+                "**** USER FEEDBACK START ****\n"
+                "[Your feedback/directives here]\n"
+                "**** USER FEEDBACK END ****"
+            ),
+            "actions": {
+                "primary": "send_to_reviewers",
+                "secondary": ["cancel"]
+            },
+            "editable_content": default_reviewer_prompt
         }
+
+        # This pauses workflow until human provides input
+        human_input = interrupt(checkpoint_data)
+
+        # Process human decision
+        action = human_input.get("action", "send_to_reviewers")
+        edited_reviewer_prompt = human_input.get("edited_content", default_reviewer_prompt)
+
+        if action == "send_to_reviewers":
+            return {
+                "reviewer_prompt": edited_reviewer_prompt,
+                "status": "ready_for_review",
+                "messages": [HumanMessage(
+                    content=f"[User edited reviewer prompt and approved for review]",
+                    name="user"
+                )],
+                "checkpoint_number": state["checkpoint_number"] + 1
+            }
+        else:  # cancel
+            return {
+                "status": "cancelled",
+                "next_step": "end",
+                "messages": [HumanMessage(
+                    content="[User cancelled workflow]",
+                    name="user"
+                )]
+            }
 
     async def _review_agents_node(self, state: PlanReviewState) -> dict:
         """Node for parallel review agent execution"""
@@ -148,13 +254,24 @@ class PlanReviewWorkflow:
         # Get review agents
         review_agents = await self.agent_factory.get_review_agents(workspace_path=self.workspace_path)
 
-        plan_to_review = state.get("user_edits") or state["current_plan"]
-
-        # Execute all reviews in parallel
-        review_tasks = [
-            self._execute_review_agent(agent, plan_to_review)
-            for agent in review_agents
-        ]
+        # Check if user provided a custom reviewer prompt
+        if state.get("reviewer_prompt"):
+            # Use the custom prompt edited by the user
+            print(f"[ReviewAgents] Using custom reviewer prompt edited by user")
+            reviewer_prompt = state["reviewer_prompt"]
+            # Execute all reviews in parallel with the same custom prompt
+            review_tasks = [
+                agent.send_message(reviewer_prompt)
+                for agent in review_agents
+            ]
+        else:
+            # Use the default template (original behavior)
+            print(f"[ReviewAgents] Using default reviewer prompt template")
+            plan_to_review = state.get("user_edits") or state["current_plan"]
+            review_tasks = [
+                self._execute_review_agent(agent, plan_to_review)
+                for agent in review_agents
+            ]
 
         reviews = await asyncio.gather(*review_tasks)
 
@@ -206,13 +323,14 @@ class PlanReviewWorkflow:
             "instructions": (
                 "Multiple REVIEW AGENTS have provided feedback. "
                 "You can:\n"
-                "1. Approve the plan (end workflow)\n"
-                "2. Consolidate feedback and send back to PLANNING AGENT\n"
-                "3. Cancel the workflow"
+                "1. Send consolidated feedback back to PLANNING AGENT for revision\n"
+                "2. Edit the full prompt that will be sent to PLANNING AGENT\n"
+                "3. Approve the plan and end the workflow\n"
+                "4. Cancel the workflow"
             ),
             "actions": {
                 "primary": "send_to_planner_for_revision",
-                "secondary": ["approve_plan", "cancel"]
+                "secondary": ["edit_full_prompt", "approve_plan", "cancel"]
             },
             "editable_content": self._consolidate_reviews(state["review_feedback"]),
             "context": {
@@ -224,6 +342,7 @@ class PlanReviewWorkflow:
         human_input = interrupt(checkpoint_data)
 
         action = human_input.get("action", "approve_plan")
+        consolidated_feedback = human_input.get("edited_content", "")
 
         if action == "approve_plan":
             return {
@@ -235,7 +354,6 @@ class PlanReviewWorkflow:
                 )]
             }
         elif action == "send_to_planner_for_revision":
-            consolidated_feedback = human_input.get("edited_content", "")
             return {
                 "status": "revision_needed",
                 "next_step": "planning_agent",
@@ -246,7 +364,86 @@ class PlanReviewWorkflow:
                     name="user"
                 )]
             }
-        else:
+        elif action == "edit_full_prompt":
+            return {
+                "status": "editing_planner_prompt",
+                "next_step": "edit_planner_prompt",
+                "user_edits": consolidated_feedback,
+                "messages": [HumanMessage(
+                    content=f"[User wants to edit full planner prompt]",
+                    name="user"
+                )]
+            }
+        else:  # cancel
+            return {
+                "status": "cancelled",
+                "next_step": "end",
+                "messages": [HumanMessage(
+                    content="[User cancelled workflow]",
+                    name="user"
+                )]
+            }
+
+    async def _edit_planner_prompt_checkpoint_node(self, state: PlanReviewState) -> dict:
+        """Human checkpoint for editing the complete planner revision prompt"""
+        print(f"[Checkpoint] Edit planner prompt - awaiting human edits")
+
+        # Generate the default planner revision prompt
+        current_plan = state.get("user_edits") or state["current_plan"]
+
+        # Build the review feedback for the template
+        review_feedback = [
+            {
+                "agent_name": fb["agent_name"],
+                "feedback": fb["feedback"]
+            }
+            for fb in state["review_feedback"]
+        ]
+
+        default_planner_prompt = self.templates.planning_revision(current_plan, review_feedback)
+
+        checkpoint_data = {
+            "checkpoint_id": str(uuid.uuid4()),
+            "checkpoint_number": state["checkpoint_number"],
+            "step_name": "edit_planner_prompt",
+            "workflow_id": state["workflow_id"],
+            "iteration": state.get("iteration_count", 0),
+            "agent_outputs": [],
+            "instructions": (
+                "Edit the complete prompt that will be sent to the PLANNING AGENT for revision.\n\n"
+                "You can inject user feedback, directives, or additional context here.\n"
+                "The edited prompt will be sent to the planner to revise the plan.\n\n"
+                "Tip: Add user feedback/directives like this:\n"
+                "**** USER FEEDBACK START ****\n"
+                "[Your feedback/directives here]\n"
+                "**** USER FEEDBACK END ****"
+            ),
+            "actions": {
+                "primary": "send_to_planner_for_revision",
+                "secondary": ["cancel"]
+            },
+            "editable_content": default_planner_prompt
+        }
+
+        # This pauses workflow until human provides input
+        human_input = interrupt(checkpoint_data)
+
+        # Process human decision
+        action = human_input.get("action", "send_to_planner_for_revision")
+        edited_planner_prompt = human_input.get("edited_content", default_planner_prompt)
+
+        if action == "send_to_planner_for_revision":
+            return {
+                "planner_prompt": edited_planner_prompt,
+                "status": "revision_needed",
+                "iteration_count": state.get("iteration_count", 0) + 1,
+                "messages": [HumanMessage(
+                    content=f"[User edited planner prompt and requested revision]",
+                    name="user"
+                )],
+                "checkpoint_number": state["checkpoint_number"] + 1
+            }
+        else:  # cancel
             return {
                 "status": "cancelled",
                 "next_step": "end",

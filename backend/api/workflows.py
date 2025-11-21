@@ -164,10 +164,35 @@ async def get_workflow(workflow_id: str):
     # Get LangGraph checkpoint data
     pending_checkpoint = None
     if workflow_id in active_workflows:
-        last_result = active_workflows[workflow_id].get("last_result")
-        if last_result:
-            # LangGraph interrupt returns data in specific format
-            pending_checkpoint = last_result
+        workflow_data = active_workflows[workflow_id]
+        compiled_workflow = workflow_data["compiled"]
+        config = {"configurable": {"thread_id": workflow_id}}
+
+        # Get current state from LangGraph checkpoint
+        try:
+            # Use async method since we're using AsyncSqliteSaver
+            state = await compiled_workflow.aget_state(config)
+            print(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
+
+            # LangGraph stores interrupt data in state.interrupts (tuple of Interrupt objects)
+            # NOT in state.values['__interrupt__']
+            if state and hasattr(state, 'interrupts') and state.interrupts:
+                # interrupts is a tuple, take the first one
+                interrupt_obj = state.interrupts[0]
+                print(f"[API] Found interrupt object: {type(interrupt_obj)}")
+
+                # Extract the value from the Interrupt object
+                if hasattr(interrupt_obj, 'value'):
+                    pending_checkpoint = interrupt_obj.value
+                    print(f"[API] ✓ Extracted checkpoint data, keys: {pending_checkpoint.keys() if isinstance(pending_checkpoint, dict) else 'not a dict'}")
+                else:
+                    print(f"[API] Interrupt object has no 'value' attribute")
+            else:
+                print(f"[API] No interrupts in state (state={state is not None}, has_attr={hasattr(state, 'interrupts') if state else False}, interrupts={state.interrupts if state and hasattr(state, 'interrupts') else None})")
+        except Exception as e:
+            print(f"[API] Error getting checkpoint state: {e}")
+            import traceback
+            traceback.print_exc()
 
     workflow_dict = dict(workflow_row)
     # Convert string timestamps to datetime
@@ -244,7 +269,7 @@ async def resume_workflow_execution(
 
 @router.get("/{workflow_id}/history")
 async def get_workflow_history(workflow_id: str):
-    """Get full checkpoint history for workflow"""
+    """Get full checkpoint history for workflow with enriched plan/review data"""
 
     if workflow_id not in active_workflows:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -255,15 +280,53 @@ async def get_workflow_history(workflow_id: str):
     # Get checkpoint history from LangGraph
     history = []
     try:
-        for state in compiled_workflow.get_state_history(config):
-            history.append({
-                "checkpoint_id": str(state.config.get("checkpoint_id", "unknown")),
-                "state": state.values,
+        # get_state_history returns states in reverse chronological order (newest first)
+        # We'll reverse it to show oldest→newest for timeline display
+        states_list = []
+        async for state in compiled_workflow.aget_state_history(config):
+            states_list.append(state)
+
+        # Reverse to get chronological order
+        states_list.reverse()
+
+        for idx, state in enumerate(states_list):
+            # Extract useful data from state
+            state_values = state.values if state else {}
+
+            # Determine step type based on state content
+            step_type = "unknown"
+            step_name = f"Step {idx + 1}"
+
+            if "current_plan" in state_values:
+                step_type = "plan"
+                step_name = f"Plan (Iteration {state_values.get('iteration_count', 0)})"
+            elif "reviews" in state_values and state_values["reviews"]:
+                step_type = "review"
+                step_name = f"Review {len(state_values['reviews'])} agents"
+
+            # Extract relevant data for timeline display
+            history_item = {
+                "checkpoint_id": str(state.config.get("configurable", {}).get("checkpoint_id", "unknown")),
+                "step_number": idx + 1,
+                "step_type": step_type,
+                "step_name": step_name,
+                "iteration_count": state_values.get("iteration_count", 0),
+                "checkpoint_number": state_values.get("checkpoint_number", 0),
+                "created_at": state.created_at.isoformat() if state.created_at else None,
                 "next_step": list(state.next) if state.next else [],
-                "created_at": state.created_at.isoformat() if state.created_at else None
-            })
+
+                # Include plan/review data for inspection
+                "current_plan": state_values.get("current_plan", ""),
+                "reviews": state_values.get("reviews", []),
+                "instructions": state_values.get("instructions", ""),
+                "actions": state_values.get("actions", []),
+            }
+
+            history.append(history_item)
     except Exception as e:
         print(f"Error getting history: {e}")
+        import traceback
+        traceback.print_exc()
         history = []
 
     return {"workflow_id": workflow_id, "history": history}
