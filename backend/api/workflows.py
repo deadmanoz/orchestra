@@ -17,92 +17,21 @@ from backend.db.connection import db
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from backend.api.websocket import broadcast_to_workflow
+from backend.services.workflow_manager import WorkflowStatusManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 # In-memory store for active workflows (replace with Redis in production)
 active_workflows = {}
 
-# === Workflow Status Management Helpers ===
-# These functions ensure atomic updates of both memory and database state
+# Initialize Workflow Status Manager
+status_manager = WorkflowStatusManager(active_workflows)
 
-async def mark_workflow_awaiting_checkpoint(workflow_id: str, result: dict) -> None:
-    """
-    Mark workflow as awaiting checkpoint with atomic memory + DB update.
-
-    Args:
-        workflow_id: The workflow ID
-        result: The LangGraph result containing checkpoint data
-    """
-    # Update memory state
-    active_workflows[workflow_id]["status"] = WorkflowStatus.AWAITING_CHECKPOINT.value
-    active_workflows[workflow_id]["last_result"] = result
-
-    # Update database atomically
-    async with db.get_connection() as conn:
-        await conn.execute(
-            "UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?",
-            (WorkflowStatus.AWAITING_CHECKPOINT.value, datetime.now().isoformat(), workflow_id)
-        )
-        await conn.commit()
-
-    # Notify frontend via WebSocket
-    await broadcast_to_workflow(workflow_id, {
-        "type": "checkpoint_ready",
-        "workflow_id": workflow_id,
-        "timestamp": datetime.now().isoformat()
-    })
-
-async def mark_workflow_completed(workflow_id: str) -> None:
-    """
-    Mark workflow as completed with atomic memory + DB update.
-
-    Args:
-        workflow_id: The workflow ID
-    """
-    # Update memory state
-    active_workflows[workflow_id]["status"] = WorkflowStatus.COMPLETED.value
-
-    # Update database atomically
-    async with db.get_connection() as conn:
-        await conn.execute(
-            "UPDATE workflows SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-            (WorkflowStatus.COMPLETED.value, datetime.now().isoformat(),
-             datetime.now().isoformat(), workflow_id)
-        )
-        await conn.commit()
-
-    # Clean up active workflows to prevent memory leak
-    if workflow_id in active_workflows:
-        del active_workflows[workflow_id]
-
-async def mark_workflow_failed(workflow_id: str, error: Exception) -> None:
-    """
-    Mark workflow as failed with atomic memory + DB update.
-
-    Args:
-        workflow_id: The workflow ID
-        error: The exception that caused the failure
-    """
-    error_message = str(error)
-
-    # Update memory state
-    if workflow_id in active_workflows:
-        active_workflows[workflow_id]["status"] = WorkflowStatus.FAILED.value
-        active_workflows[workflow_id]["error"] = error_message
-
-    # Update database atomically (FIXED: was missing before!)
-    async with db.get_connection() as conn:
-        await conn.execute(
-            "UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?",
-            (WorkflowStatus.FAILED.value, datetime.now().isoformat(), workflow_id)
-        )
-        await conn.commit()
-
-    # Clean up active workflows
-    if workflow_id in active_workflows:
-        del active_workflows[workflow_id]
-
+# === Legacy Checkpoint Persistence Functions ===
+# TODO: Phase 4 - Move these to CheckpointManager
 async def save_checkpoint_created(checkpoint_data: dict) -> None:
     """
     Save checkpoint creation to database for audit trail.
@@ -279,14 +208,12 @@ async def execute_workflow(
             config
         )
 
-        # Mark workflow as awaiting checkpoint (atomic update)
-        await mark_workflow_awaiting_checkpoint(workflow_id, result)
+        # Mark workflow as awaiting checkpoint (atomic update with validation)
+        await status_manager.mark_awaiting_checkpoint(workflow_id, result, validate=False)
 
     except Exception as e:
-        print(f"Workflow {workflow_id} failed: {e}")
-        import traceback
-        traceback.print_exc()
-        await mark_workflow_failed(workflow_id, e)
+        logger.error(f"Workflow {workflow_id} failed: {e}", exc_info=True)
+        await status_manager.mark_failed(workflow_id, e, validate=False)
 
 @router.get("/{workflow_id}", response_model=WorkflowStateSnapshot)
 async def get_workflow(workflow_id: str):
@@ -421,16 +348,14 @@ async def resume_workflow_execution(
         # Check if workflow completed or hit another checkpoint
         if result:
             # Hit another checkpoint - mark as awaiting (atomic update)
-            await mark_workflow_awaiting_checkpoint(workflow_id, result)
+            await status_manager.mark_awaiting_checkpoint(workflow_id, result, validate=False)
         else:
             # Workflow completed - mark as done (atomic update with cleanup)
-            await mark_workflow_completed(workflow_id)
+            await status_manager.mark_completed(workflow_id, validate=False)
 
     except Exception as e:
-        print(f"Resume failed for {workflow_id}: {e}")
-        import traceback
-        traceback.print_exc()
-        await mark_workflow_failed(workflow_id, e)
+        logger.error(f"Resume failed for {workflow_id}: {e}", exc_info=True)
+        await status_manager.mark_failed(workflow_id, e, validate=False)
 
 @router.get("/{workflow_id}/history")
 async def get_workflow_history(workflow_id: str):

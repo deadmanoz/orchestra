@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Workflow, Message, AgentExecution, Checkpoint } from '../types';
 import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2 } from 'lucide-react';
+import { WorkflowStatus, CheckpointStep } from '../constants/workflowStatus';
 
 interface Props {
   workflow: Workflow;
@@ -41,31 +42,31 @@ function getWorkflowStatusMessage(
   pendingCheckpoint: Checkpoint | null,
   executions: AgentExecution[]
 ): { message: string; showSpinner: boolean } {
-  if (workflow.status === 'completed') {
+  if (workflow.status === WorkflowStatus.COMPLETED) {
     return { message: 'Workflow completed successfully', showSpinner: false };
   }
 
-  if (workflow.status === 'failed') {
+  if (workflow.status === WorkflowStatus.FAILED) {
     return { message: 'Workflow failed', showSpinner: false };
   }
 
-  // If paused/awaiting checkpoint (handle both 'paused' and 'awaiting_checkpoint' statuses)
-  if ((workflow.status === 'paused' || workflow.status === 'awaiting_checkpoint') && pendingCheckpoint) {
+  // If awaiting checkpoint
+  if (workflow.status === WorkflowStatus.AWAITING_CHECKPOINT && pendingCheckpoint) {
     const stepName = pendingCheckpoint.step_name;
 
-    if (stepName === 'plan_ready_for_review') {
+    if (stepName === CheckpointStep.PLAN_READY_FOR_REVIEW) {
       return { message: 'Plan ready for your review', showSpinner: false };
     }
 
-    if (stepName === 'reviews_ready_for_consolidation') {
+    if (stepName === CheckpointStep.REVIEWS_READY_FOR_CONSOLIDATION) {
       return { message: 'Reviews ready for your decision', showSpinner: false };
     }
 
-    if (stepName === 'edit_reviewer_prompt') {
+    if (stepName === CheckpointStep.EDIT_REVIEWER_PROMPT) {
       return { message: 'Edit reviewer prompt', showSpinner: false };
     }
 
-    if (stepName === 'edit_planner_prompt') {
+    if (stepName === CheckpointStep.EDIT_PLANNER_PROMPT) {
       return { message: 'Edit planner prompt', showSpinner: false };
     }
 
@@ -73,9 +74,9 @@ function getWorkflowStatusMessage(
   }
 
   // Workflow is running - determine what's happening
-  if (workflow.status === 'running') {
+  if (workflow.status === WorkflowStatus.RUNNING) {
     // Check if any agents are currently running
-    const runningAgents = executions.filter(e => e.status === 'running');
+    const runningAgents = executions.filter(e => e.status === WorkflowStatus.RUNNING);
     const agentTypes = runningAgents.map(a => a.agent_type);
 
     // If we have running agents, show status based on agent type
@@ -167,17 +168,17 @@ function ElapsedTimer({ startTime }: { startTime: string }) {
 export default function WorkflowDashboard({ workflow, messages, executions, pendingCheckpoint, onReset }: Props) {
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed':
+      case WorkflowStatus.COMPLETED:
         return <CheckCircle color="#51cf66" size={20} />;
-      case 'running':
+      case WorkflowStatus.RUNNING:
         return (
           <span style={spinAnimation}>
             <Loader2 color="#ffd43b" size={20} />
           </span>
         );
-      case 'paused':
+      case WorkflowStatus.AWAITING_CHECKPOINT:
         return <Clock color="#ffd43b" size={20} />;
-      case 'failed':
+      case WorkflowStatus.FAILED:
         return <XCircle color="#ff6b6b" size={20} />;
       default:
         return <PlayCircle color="#888" size={20} />;
@@ -205,7 +206,7 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
     }
 
     // If workflow is running but no running agents yet, use workflow's updated_at
-    if (workflow.status === 'running') {
+    if (workflow.status === WorkflowStatus.RUNNING) {
       return workflow.updated_at;
     }
 
@@ -286,8 +287,8 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     {getStatusIcon(execution.status)}
-                    <span style={{ fontSize: '0.9rem', color: execution.status === 'completed' ? '#51cf66' : '#888', fontWeight: execution.status === 'completed' ? 'bold' : 'normal' }}>
-                      {execution.status === 'running' ? (
+                    <span style={{ fontSize: '0.9rem', color: execution.status === WorkflowStatus.COMPLETED ? '#51cf66' : '#888', fontWeight: execution.status === WorkflowStatus.COMPLETED ? 'bold' : 'normal' }}>
+                      {execution.status === WorkflowStatus.RUNNING ? (
                         <ElapsedTimer startTime={execution.started_at} />
                       ) : (
                         formatDuration(execution.execution_time_ms)

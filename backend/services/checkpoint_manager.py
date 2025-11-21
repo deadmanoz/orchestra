@@ -265,51 +265,69 @@ class CheckpointManager:
         """
         from langchain_core.messages import HumanMessage
 
+        # Build agent_outputs from review feedback
+        agent_outputs = [
+            {
+                "agent_name": fb["agent_name"],
+                "agent_type": "review",
+                "output": fb["feedback"],
+                "timestamp": fb["timestamp"]
+            }
+            for fb in state.get("review_feedback", [])
+        ]
+
         human_input = await self.create_checkpoint(
             workflow_id=state["workflow_id"],
             checkpoint_number=state["checkpoint_number"],
             step_name="reviews_ready_for_consolidation",
             editable_content=consolidated_feedback,
             instructions=(
-                "Review feedback from all REVIEW AGENTS has been consolidated. "
-                "Edit if needed, then choose whether to revise the plan or complete the workflow."
+                "Multiple REVIEW AGENTS have provided feedback. "
+                "You can:\n"
+                "1. Send consolidated feedback back to PLANNING AGENT for revision\n"
+                "2. Edit the full prompt that will be sent to PLANNING AGENT\n"
+                "3. Approve the plan and end the workflow\n"
+                "4. Cancel the workflow"
             ),
             actions={
-                "primary": "request_revision",
-                "secondary": ["edit_prompt_and_revise", "approve_plan", "cancel"]
+                "primary": "send_to_planner_for_revision",
+                "secondary": ["edit_full_prompt", "approve_plan", "cancel"]
             },
-            iteration=state.get("iteration_count", 0)
+            agent_outputs=agent_outputs,
+            iteration=state.get("iteration_count", 0),
+            context={"current_plan": state.get("user_edits") or state.get("current_plan", "")}
         )
 
-        action = human_input.get("action", "request_revision")
+        action = human_input.get("action", "approve_plan")
         edited_feedback = human_input.get("edited_content", consolidated_feedback)
 
-        if action == "request_revision":
+        if action == "approve_plan":
             return {
-                "consolidated_feedback": edited_feedback,
-                "status": "revision_needed",
-                "next_step": "planning_agent",
-                "messages": [HumanMessage(
-                    content="[User requested plan revision based on reviews]",
-                    name="user"
-                )]
-            }
-        elif action == "edit_prompt_and_revise":
-            return {
-                "consolidated_feedback": edited_feedback,
-                "status": "editing_planner_prompt",
-                "next_step": "edit_planner_prompt",
-                "messages": [HumanMessage(
-                    content="[User wants to edit planner prompt before revision]",
-                    name="user"
-                )]
-            }
-        elif action == "approve_plan":
-            return {
-                "status": "completed",
+                "status": "approved",
                 "next_step": "end",
                 "messages": [HumanMessage(
-                    content="[User approved plan without revision]",
+                    content="[User approved final plan]",
+                    name="user"
+                )]
+            }
+        elif action == "send_to_planner_for_revision":
+            return {
+                "status": "revision_needed",
+                "next_step": "planning_agent",
+                "iteration_count": state.get("iteration_count", 0) + 1,
+                "user_edits": edited_feedback,
+                "messages": [HumanMessage(
+                    content=f"[User requested revision]\n{edited_feedback}",
+                    name="user"
+                )]
+            }
+        elif action == "edit_full_prompt":
+            return {
+                "status": "editing_planner_prompt",
+                "next_step": "edit_planner_prompt",
+                "user_edits": edited_feedback,
+                "messages": [HumanMessage(
+                    content="[User wants to edit full planner prompt]",
                     name="user"
                 )]
             }
@@ -362,6 +380,7 @@ class CheckpointManager:
             "approve": "approved",
             "edit_and_continue": "edited",
             "edit_prompt_and_revise": "edited",
+            "edit_full_prompt": "edited",
             "cancel": "rejected"
         }
         status = status_map.get(action, "approved")
