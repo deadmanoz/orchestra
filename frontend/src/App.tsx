@@ -42,6 +42,7 @@ function App() {
                 workflow={workflowData.workflow}
                 messages={workflowData.recent_messages}
                 executions={workflowData.agent_executions}
+                pendingCheckpoint={workflowData.pending_checkpoint}
                 onReset={() => setCurrentWorkflowId(null)}
               />
 
