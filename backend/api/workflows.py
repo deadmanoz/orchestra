@@ -16,6 +16,7 @@ from backend.agents.factory import agent_factory
 from backend.db.connection import db
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
+from backend.api.websocket import broadcast_to_workflow
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -138,6 +139,13 @@ async def execute_workflow(
             )
             await conn.commit()
 
+        # Notify frontend via WebSocket that checkpoint is ready
+        await broadcast_to_workflow(workflow_id, {
+            "type": "checkpoint_ready",
+            "workflow_id": workflow_id,
+            "timestamp": datetime.now().isoformat()
+        })
+
     except Exception as e:
         print(f"Workflow {workflow_id} failed: {e}")
         import traceback
@@ -248,6 +256,21 @@ async def resume_workflow_execution(
         if result:
             active_workflows[workflow_id]["status"] = WorkflowStatus.AWAITING_CHECKPOINT.value
             active_workflows[workflow_id]["last_result"] = result
+
+            # Update database
+            async with db.get_connection() as conn:
+                await conn.execute(
+                    "UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?",
+                    (WorkflowStatus.AWAITING_CHECKPOINT.value, datetime.now().isoformat(), workflow_id)
+                )
+                await conn.commit()
+
+            # Notify frontend via WebSocket that checkpoint is ready
+            await broadcast_to_workflow(workflow_id, {
+                "type": "checkpoint_ready",
+                "workflow_id": workflow_id,
+                "timestamp": datetime.now().isoformat()
+            })
         else:
             # Workflow completed
             active_workflows[workflow_id]["status"] = WorkflowStatus.COMPLETED.value

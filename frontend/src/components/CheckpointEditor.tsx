@@ -11,6 +11,20 @@ interface Props {
 
 // Format action names for display (remove underscores, capitalize)
 function formatActionName(action: string): string {
+  // Provide better names for specific actions
+  const actionNames: Record<string, string> = {
+    'edit_and_continue': 'Edit Full Prompt',
+    'send_to_reviewers': 'Send to Reviewers',
+    'send_to_planner_for_revision': 'Send to Planner',
+    'approve': 'Approve',
+    'cancel': 'Cancel'
+  };
+
+  if (actionNames[action]) {
+    return actionNames[action];
+  }
+
+  // Default: convert snake_case to Title Case
   return action
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))

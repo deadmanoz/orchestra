@@ -49,8 +49,8 @@ function getWorkflowStatusMessage(
     return { message: 'Workflow failed', showSpinner: false };
   }
 
-  // If paused/awaiting checkpoint
-  if (workflow.status === 'paused' && pendingCheckpoint) {
+  // If paused/awaiting checkpoint (handle both 'paused' and 'awaiting_checkpoint' statuses)
+  if ((workflow.status === 'paused' || workflow.status === 'awaiting_checkpoint') && pendingCheckpoint) {
     const stepName = pendingCheckpoint.step_name;
 
     if (stepName === 'plan_ready_for_review') {
