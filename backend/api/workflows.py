@@ -242,36 +242,34 @@ async def get_workflow(workflow_id: str):
         try:
             # Use async method since we're using AsyncSqliteSaver
             state = await compiled_workflow.aget_state(config)
-            print(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
+            logger.debug(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
 
             # LangGraph stores interrupt data in state.interrupts (tuple of Interrupt objects)
             # NOT in state.values['__interrupt__']
             if state and hasattr(state, 'interrupts') and state.interrupts:
                 # interrupts is a tuple, take the first one
                 interrupt_obj = state.interrupts[0]
-                print(f"[API] Found interrupt object: {type(interrupt_obj)}")
+                logger.debug(f"[API] Found interrupt object: {type(interrupt_obj)}")
 
                 # Extract the value from the Interrupt object
                 if hasattr(interrupt_obj, 'value'):
                     pending_checkpoint = interrupt_obj.value
-                    print(f"[API] ✓ Extracted checkpoint data, keys: {pending_checkpoint.keys() if isinstance(pending_checkpoint, dict) else 'not a dict'}")
+                    logger.debug(f"[API] ✓ Extracted checkpoint data, keys: {pending_checkpoint.keys() if isinstance(pending_checkpoint, dict) else 'not a dict'}")
 
                     # Save checkpoint to database for audit trail
                     if isinstance(pending_checkpoint, dict) and pending_checkpoint.get("checkpoint_id"):
                         try:
                             await save_checkpoint_created(pending_checkpoint)
-                            print(f"[API] ✓ Saved checkpoint {pending_checkpoint.get('checkpoint_id')} to database")
+                            logger.debug(f"[API] ✓ Saved checkpoint {pending_checkpoint.get('checkpoint_id')} to database")
                         except Exception as checkpoint_error:
-                            print(f"[API] Warning: Failed to save checkpoint to database: {checkpoint_error}")
+                            logger.warning(f"[API] Failed to save checkpoint to database: {checkpoint_error}")
                             # Don't fail the request if checkpoint save fails
                 else:
-                    print(f"[API] Interrupt object has no 'value' attribute")
+                    logger.debug(f"[API] Interrupt object has no 'value' attribute")
             else:
-                print(f"[API] No interrupts in state (state={state is not None}, has_attr={hasattr(state, 'interrupts') if state else False}, interrupts={state.interrupts if state and hasattr(state, 'interrupts') else None})")
+                logger.debug(f"[API] No interrupts in state (state={state is not None}, has_attr={hasattr(state, 'interrupts') if state else False}, interrupts={state.interrupts if state and hasattr(state, 'interrupts') else None})")
         except Exception as e:
-            print(f"[API] Error getting checkpoint state: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[API] Error getting checkpoint state: {e}", exc_info=True)
 
     workflow_dict = dict(workflow_row)
     # Convert string timestamps to datetime
@@ -334,9 +332,9 @@ async def resume_workflow_execution(
                                 edited_content=resolution.get("edited_content"),
                                 user_notes=resolution.get("user_notes")
                             )
-                            print(f"[API] ✓ Saved checkpoint resolution for {checkpoint_id}")
+                            logger.debug(f"[API] ✓ Saved checkpoint resolution for {checkpoint_id}")
         except Exception as checkpoint_error:
-            print(f"[API] Warning: Failed to save checkpoint resolution: {checkpoint_error}")
+            logger.warning(f"[API] Failed to save checkpoint resolution: {checkpoint_error}")
             # Don't fail the workflow if checkpoint save fails
 
         # Resume with Command - use async API
@@ -414,9 +412,7 @@ async def get_workflow_history(workflow_id: str):
 
             history.append(history_item)
     except Exception as e:
-        print(f"Error getting history: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error getting history: {e}", exc_info=True)
         history = []
 
     return {"workflow_id": workflow_id, "history": history}
