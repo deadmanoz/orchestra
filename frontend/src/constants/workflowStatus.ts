@@ -39,6 +39,7 @@ export const CheckpointAction = {
   SEND_TO_REVIEWERS: 'send_to_reviewers',
   SEND_TO_PLANNER_FOR_REVISION: 'send_to_planner_for_revision',
   EDIT_AND_CONTINUE: 'edit_and_continue',
+  EDIT_FULL_PROMPT: 'edit_full_prompt',
   REQUEST_REVISION: 'request_revision',
   EDIT_PROMPT_AND_REVISE: 'edit_prompt_and_revise',
   APPROVE_PLAN: 'approve_plan',

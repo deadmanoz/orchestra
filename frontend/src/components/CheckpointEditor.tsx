@@ -15,6 +15,7 @@ function formatActionName(action: string): string {
   // Provide better names for specific actions
   const actionNames: Record<string, string> = {
     [CheckpointAction.EDIT_AND_CONTINUE]: 'Edit Full Prompt',
+    [CheckpointAction.EDIT_FULL_PROMPT]: 'Edit Full Prompt',
     [CheckpointAction.SEND_TO_REVIEWERS]: 'Send to Reviewers',
     [CheckpointAction.SEND_TO_PLANNER_FOR_REVISION]: 'Send to Planner',
     [CheckpointAction.APPROVE_PLAN]: 'Approve Plan',
