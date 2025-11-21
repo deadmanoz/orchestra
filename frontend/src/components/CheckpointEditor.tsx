@@ -46,25 +46,13 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
       backgroundColor: '#1a1a1a',
       boxShadow: '0 -4px 12px rgba(0,0,0,0.3)'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
-        <div>
-          <h3 style={{ margin: '0 0 0.5rem 0' }}>
-            🛑 Checkpoint #{checkpoint.checkpoint_number ?? 0}
-          </h3>
-          <p style={{ margin: 0, color: '#888', fontSize: '0.9rem' }}>
-            {checkpoint.step_name ?? 'Unknown step'} • Iteration {checkpoint.iteration ?? 0}
-          </p>
-        </div>
-        <button
-          onClick={() => setIsEditing(!isEditing)}
-          style={{
-            fontSize: '0.9rem',
-            backgroundColor: isEditing ? '#646cff' : 'transparent'
-          }}
-        >
-          <Edit3 size={16} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
-          {isEditing ? 'Preview' : 'Edit'}
-        </button>
+      <div style={{ marginBottom: '1rem' }}>
+        <h3 style={{ margin: '0 0 0.5rem 0' }}>
+          🛑 Checkpoint #{checkpoint.checkpoint_number ?? 0}
+        </h3>
+        <p style={{ margin: 0, color: '#888', fontSize: '0.9rem' }}>
+          {checkpoint.step_name ?? 'Unknown step'} • Iteration {checkpoint.iteration ?? 0}
+        </p>
       </div>
 
       {/* Instructions */}
@@ -80,69 +68,131 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
         </div>
       )}
 
-      {/* Agent Outputs */}
+      {/* Agent Outputs - Only show reviewers, not the planner (plan is in editable content below) */}
       {checkpoint.agent_outputs && checkpoint.agent_outputs.length > 0 && (
-        <div style={{ marginBottom: '1rem' }}>
-          <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem' }}>Agent Outputs</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {checkpoint.agent_outputs.map((output, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '1rem',
-                  backgroundColor: '#0a0a0a',
-                  borderRadius: '4px',
-                  border: '1px solid #333'
-                }}
-              >
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '0.5rem',
-                  fontSize: '0.9rem',
-                  color: '#888'
-                }}>
-                  <span><strong>{output.agent_name}</strong> ({output.agent_type})</span>
-                  {output.execution_time && (
-                    <span>{(output.execution_time / 1000).toFixed(1)}s</span>
-                  )}
-                </div>
-                <div style={{ fontSize: '0.95rem', whiteSpace: 'pre-wrap' }}>
-                  {output.output}
-                </div>
+        (() => {
+          // Filter to only show review agents (role="review"), not the planner
+          // This avoids duplication since the plan is shown in "Content to Review" section
+          const reviewOutputs = checkpoint.agent_outputs.filter(
+            output => output.agent_type === 'review' ||
+                     output.agent_name?.includes('reviewer') ||
+                     output.agent_name?.includes('review')
+          );
+
+          if (reviewOutputs.length === 0) {
+            return null;
+          }
+
+          return (
+            <div style={{ marginBottom: '1rem' }}>
+              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem' }}>
+                Reviews ({reviewOutputs.length})
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {reviewOutputs.map((output, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: '1rem',
+                      backgroundColor: '#0a0a0a',
+                      borderRadius: '4px',
+                      border: '1px solid #333'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      marginBottom: '0.75rem',
+                      fontSize: '0.9rem',
+                      paddingBottom: '0.5rem',
+                      borderBottom: '1px solid #222'
+                    }}>
+                      <span style={{ fontWeight: 600, color: '#51cf66' }}>
+                        {output.agent_name}
+                      </span>
+                      {output.execution_time && (
+                        <span style={{ color: '#888' }}>
+                          {(output.execution_time / 1000).toFixed(1)}s
+                        </span>
+                      )}
+                    </div>
+                    <div style={{
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                      maxHeight: '400px',
+                      overflow: 'auto'
+                    }}>
+                      <ReactMarkdown>{output.output}</ReactMarkdown>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          );
+        })()
       )}
 
-      {/* Editable Content */}
+      {/* Editable Content - The plan that can be edited before approval */}
       <div style={{ marginBottom: '1rem' }}>
-        <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem' }}>Content to Review</h4>
-        {isEditing ? (
-          <textarea
-            value={editedContent}
-            onChange={(e) => setEditedContent(e.target.value)}
-            rows={12}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h4 style={{ margin: 0, fontSize: '1rem' }}>
+            {isEditing ? '✏️ Editing Plan' : '📋 Current Plan'}
+          </h4>
+          <button
+            onClick={() => setIsEditing(!isEditing)}
             style={{
-              width: '100%',
-              padding: '1rem',
-              fontSize: '0.95rem',
-              fontFamily: 'monospace',
-              backgroundColor: '#0a0a0a',
-              border: '1px solid #444',
+              fontSize: '0.85rem',
+              padding: '0.4rem 0.75rem',
+              backgroundColor: isEditing ? '#646cff' : '#495057',
+              border: 'none',
               borderRadius: '4px',
-              color: 'white'
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem'
             }}
-          />
+          >
+            <Edit3 size={14} />
+            {isEditing ? 'Preview' : 'Edit Plan'}
+          </button>
+        </div>
+        {isEditing ? (
+          <>
+            <textarea
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              rows={15}
+              style={{
+                width: '100%',
+                padding: '1rem',
+                fontSize: '0.95rem',
+                fontFamily: 'monospace',
+                backgroundColor: '#0a0a0a',
+                border: '2px solid #646cff',
+                borderRadius: '4px',
+                color: 'white',
+                lineHeight: '1.5'
+              }}
+              placeholder="Edit the plan here..."
+            />
+            <div style={{
+              fontSize: '0.85rem',
+              color: '#888',
+              marginTop: '0.5rem',
+              fontStyle: 'italic'
+            }}>
+              💡 Tip: Edit the plan based on review feedback, then click approve to continue
+            </div>
+          </>
         ) : (
           <div style={{
             padding: '1rem',
             backgroundColor: '#0a0a0a',
             borderRadius: '4px',
             border: '1px solid #333',
-            maxHeight: '300px',
-            overflow: 'auto'
+            maxHeight: '400px',
+            overflow: 'auto',
+            lineHeight: '1.6'
           }}>
             <ReactMarkdown>{editedContent}</ReactMarkdown>
           </div>
