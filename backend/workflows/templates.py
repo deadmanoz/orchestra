@@ -43,7 +43,7 @@ Your plan will be reviewed by multiple REVIEW AGENTS before implementation.
                     role = "YOU (previous iteration)"
                 else:
                     role = f"REVIEW AGENT ({msg.name})"
-                content = msg.content[:500] + "..." if len(msg.content) > 500 else msg.content
+                content = msg.content
             else:
                 continue
 
@@ -133,15 +133,14 @@ Provide direct, unambiguous feedback that will help improve the plan.
                 # Previous plans and reviews
                 if msg.name == "planning_agent":
                     role = "PLANNING AGENT"
-                    # Truncate long plans in history
-                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+                    content = msg.content
                 elif msg.name and msg.name.startswith("review_agent"):
                     # Check if this is OUR previous review
                     role = f"YOU (previous review)" if agent_name.lower() in msg.name.lower() else f"OTHER REVIEWER"
-                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+                    content = msg.content
                 else:
                     role = f"AGENT ({msg.name})"
-                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+                    content = msg.content
             else:
                 continue
 
