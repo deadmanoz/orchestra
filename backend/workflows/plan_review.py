@@ -94,7 +94,8 @@ class PlanReviewWorkflow:
 
     async def _planning_agent_node(self, state: PlanReviewState) -> dict:
         """Node for planning agent execution"""
-        logger.info(f"[PlanningAgent] Starting iteration {state.get('iteration_count', 0)}")
+        iteration = state.get('iteration_count', 0)
+        logger.info(f"[PlanningAgent] Starting iteration {iteration}")
 
         # Get planning agent
         planning_agent = await self.agent_factory.get_agent("planning", "claude_planner", workspace_path=self.workspace_path)
@@ -104,12 +105,13 @@ class PlanReviewWorkflow:
             # Use custom planner prompt edited by user
             logger.info(f"[PlanningAgent] Using custom planner prompt edited by user")
             prompt = state["planner_prompt"]
-        elif state.get("review_feedback"):
-            # Revision based on feedback - use default template
-            logger.info(f"[PlanningAgent] Using default planning revision template")
-            prompt = self.templates.planning_revision(
-                state.get("user_edits") or state["current_plan"],
-                state["review_feedback"]
+        elif iteration > 0:
+            # Revision with FULL conversation history for context
+            # This allows the agent to remember previous attempts and user preferences
+            logger.info(f"[PlanningAgent] Using conversation history template (iteration {iteration})")
+            prompt = self.templates.planning_with_history(
+                messages=state["messages"],
+                review_feedback=state.get("review_feedback")
             )
         else:
             # Initial planning - use default template
@@ -118,6 +120,7 @@ class PlanReviewWorkflow:
             prompt = self.templates.planning_initial(initial_message)
 
         # Execute agent
+        logger.debug(f"[PlanningAgent] Prompt length: {len(prompt)} chars")
         plan = await planning_agent.send_message(prompt)
 
         return {
