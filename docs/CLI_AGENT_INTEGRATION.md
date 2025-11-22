@@ -2,7 +2,14 @@
 
 ## Overview
 
-Orchestra now supports real CLI agents via subprocess integration! This allows you to use actual AI coding agents (Claude Code, Codex, Gemini) instead of mock agents.
+Orchestra now supports real CLI agents via subprocess integration! This allows you to use actual AI coding agents instead of mock agents.
+
+> **Implementation Status**:
+> - ✅ **ClaudeAgent**: Fully implemented and production-ready
+> - ⏳ **CodexAgent**: Architecture defined, not yet implemented
+> - ⏳ **GeminiAgent**: Architecture defined, not yet implemented
+>
+> This guide describes both implemented and planned agent integrations.
 
 ## Architecture
 
@@ -212,12 +219,12 @@ plan = await planning_agent.send_message(prompt)
 - [x] Logging infrastructure
 - [x] Unit tests for agent creation and JSON parsing
 
-### 🚧 In Progress
+### 🚧 Planned (Not Yet Implemented)
 
 - [ ] `CodexAgent` with `--output-schema` for structured reviews
 - [ ] `GeminiAgent` with `--output-format json`
 - [ ] Review JSON schema for consistent output
-- [ ] End-to-end workflow testing with real agents
+- [ ] Multi-agent review with different CLI tools
 
 ### 📋 Planned
 
@@ -229,16 +236,18 @@ plan = await planning_agent.send_message(prompt)
 
 ## Agent Roles in Workflow
 
-### Planning Agent (Claude Code - Main Driver)
+### Planning Agent (Claude Code - Implemented)
 - **Name**: `claude_planner`
 - **Role**: `planning`
 - **Task**: Create development plans, revise based on feedback
+- **Status**: ✅ Fully implemented and tested
 - **Why Claude?**: Best for complex reasoning and planning tasks
 
-### Review Agents (Codex, Gemini, Claude - Coming Soon)
+### Review Agents (Future Enhancement)
 - **Names**: `codex_reviewer`, `gemini_reviewer`, `claude_reviewer`
 - **Role**: `review`
 - **Task**: Parallel code review with different perspectives
+- **Status**: ⏳ Planned but not yet implemented (currently uses MockAgent)
 - **Why Multiple?**: Diverse viewpoints improve plan quality
 
 ## Troubleshooting

@@ -1,26 +1,35 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
 
 from backend.config import settings
+from backend.config.logging_config import setup_logging
 from backend.db.connection import db
 from backend.api import workflows, websocket
 from backend.agents.factory import agent_factory
+
+# Initialize logging
+setup_logging(
+    log_level=settings.log_level if hasattr(settings, 'log_level') else 'INFO',
+    log_file='orchestra.log' if settings.environment == 'production' else None
+)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management"""
     # Startup
-    print("🎼 Starting Orchestra...")
+    logger.info("🎼 Starting Orchestra...")
     await db.init_db()
-    print("✅ Database initialized")
+    logger.info("✅ Database initialized")
 
     yield
 
     # Shutdown
-    print("🛑 Shutting down Orchestra...")
+    logger.info("🛑 Shutting down Orchestra...")
     await agent_factory.stop_all()
-    print("✅ All agents stopped")
+    logger.info("✅ All agents stopped")
 
 app = FastAPI(
     title="Orchestra",

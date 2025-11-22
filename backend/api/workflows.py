@@ -1,11 +1,9 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import Optional
 import uuid
-import asyncio
 from datetime import datetime
 import json
 import aiosqlite
-import os
 from pathlib import Path
 
 from backend.models.workflow import (
@@ -16,11 +14,97 @@ from backend.agents.factory import agent_factory
 from backend.db.connection import db
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
+from backend.services.workflow_manager import WorkflowStatusManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
 # In-memory store for active workflows (replace with Redis in production)
 active_workflows = {}
+
+# Initialize Workflow Status Manager
+status_manager = WorkflowStatusManager(active_workflows)
+
+# === Legacy Checkpoint Persistence Functions ===
+# TODO: Phase 4 - Move these to CheckpointManager
+async def save_checkpoint_created(checkpoint_data: dict) -> None:
+    """
+    Save checkpoint creation to database for audit trail.
+
+    Args:
+        checkpoint_data: Checkpoint data from LangGraph interrupt
+    """
+    async with db.get_connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_checkpoints (
+                id, workflow_id, checkpoint_number, step_name,
+                agent_outputs, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                checkpoint_data.get("checkpoint_id"),
+                checkpoint_data.get("workflow_id"),
+                checkpoint_data.get("checkpoint_number", 0),
+                checkpoint_data.get("step_name", "unknown"),
+                json.dumps(checkpoint_data.get("agent_outputs", [])),
+                "pending",
+                datetime.now().isoformat()
+            )
+        )
+        await conn.commit()
+
+async def save_checkpoint_resolution(
+    checkpoint_id: str,
+    action: str,
+    edited_content: Optional[str] = None,
+    user_notes: Optional[str] = None
+) -> None:
+    """
+    Save checkpoint resolution to database for audit trail.
+
+    Args:
+        checkpoint_id: The checkpoint ID
+        action: The action taken (e.g., 'send_to_reviewers', 'edit_and_continue')
+        edited_content: User's edited content if any
+        user_notes: User's notes if any
+    """
+    # Determine status based on action
+    # NOTE: Keep this in sync with checkpoint_manager.py status_map
+    status_map = {
+        "send_to_reviewers": "approved",
+        "send_to_planner_for_revision": "approved",
+        "request_revision": "approved",
+        "approve_plan": "approved",
+        "approve": "approved",
+        "edit_and_continue": "edited",
+        "edit_prompt_and_revise": "edited",
+        "edit_full_prompt": "edited",
+        "cancel": "rejected"
+    }
+    status = status_map.get(action, "approved")
+
+    async with db.get_connection() as conn:
+        await conn.execute(
+            """
+            UPDATE user_checkpoints
+            SET user_edited_content = ?,
+                user_notes = ?,
+                status = ?,
+                resolved_at = ?
+            WHERE id = ?
+            """,
+            (
+                edited_content,
+                user_notes,
+                status,
+                datetime.now().isoformat(),
+                checkpoint_id
+            )
+        )
+        await conn.commit()
 
 def validate_workspace_path(workspace_path: Optional[str]) -> Optional[str]:
     """Validate and resolve workspace path"""
@@ -126,24 +210,12 @@ async def execute_workflow(
             config
         )
 
-        # Update workflow status
-        active_workflows[workflow_id]["status"] = WorkflowStatus.AWAITING_CHECKPOINT.value
-        active_workflows[workflow_id]["last_result"] = result
-
-        # Update database
-        async with db.get_connection() as conn:
-            await conn.execute(
-                "UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?",
-                (WorkflowStatus.AWAITING_CHECKPOINT.value, datetime.now().isoformat(), workflow_id)
-            )
-            await conn.commit()
+        # Mark workflow as awaiting checkpoint (atomic update with validation)
+        await status_manager.mark_awaiting_checkpoint(workflow_id, result, validate=False)
 
     except Exception as e:
-        print(f"Workflow {workflow_id} failed: {e}")
-        import traceback
-        traceback.print_exc()
-        active_workflows[workflow_id]["status"] = WorkflowStatus.FAILED.value
-        active_workflows[workflow_id]["error"] = str(e)
+        logger.error(f"Workflow {workflow_id} failed: {e}", exc_info=True)
+        await status_manager.mark_failed(workflow_id, e, validate=False)
 
 @router.get("/{workflow_id}", response_model=WorkflowStateSnapshot)
 async def get_workflow(workflow_id: str):
@@ -172,27 +244,34 @@ async def get_workflow(workflow_id: str):
         try:
             # Use async method since we're using AsyncSqliteSaver
             state = await compiled_workflow.aget_state(config)
-            print(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
+            logger.debug(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
 
             # LangGraph stores interrupt data in state.interrupts (tuple of Interrupt objects)
             # NOT in state.values['__interrupt__']
             if state and hasattr(state, 'interrupts') and state.interrupts:
                 # interrupts is a tuple, take the first one
                 interrupt_obj = state.interrupts[0]
-                print(f"[API] Found interrupt object: {type(interrupt_obj)}")
+                logger.debug(f"[API] Found interrupt object: {type(interrupt_obj)}")
 
                 # Extract the value from the Interrupt object
                 if hasattr(interrupt_obj, 'value'):
                     pending_checkpoint = interrupt_obj.value
-                    print(f"[API] ✓ Extracted checkpoint data, keys: {pending_checkpoint.keys() if isinstance(pending_checkpoint, dict) else 'not a dict'}")
+                    logger.debug(f"[API] ✓ Extracted checkpoint data, keys: {pending_checkpoint.keys() if isinstance(pending_checkpoint, dict) else 'not a dict'}")
+
+                    # Save checkpoint to database for audit trail
+                    if isinstance(pending_checkpoint, dict) and pending_checkpoint.get("checkpoint_id"):
+                        try:
+                            await save_checkpoint_created(pending_checkpoint)
+                            logger.debug(f"[API] ✓ Saved checkpoint {pending_checkpoint.get('checkpoint_id')} to database")
+                        except Exception as checkpoint_error:
+                            logger.warning(f"[API] Failed to save checkpoint to database: {checkpoint_error}")
+                            # Don't fail the request if checkpoint save fails
                 else:
-                    print(f"[API] Interrupt object has no 'value' attribute")
+                    logger.debug(f"[API] Interrupt object has no 'value' attribute")
             else:
-                print(f"[API] No interrupts in state (state={state is not None}, has_attr={hasattr(state, 'interrupts') if state else False}, interrupts={state.interrupts if state and hasattr(state, 'interrupts') else None})")
+                logger.debug(f"[API] No interrupts in state (state={state is not None}, has_attr={hasattr(state, 'interrupts') if state else False}, interrupts={state.interrupts if state and hasattr(state, 'interrupts') else None})")
         except Exception as e:
-            print(f"[API] Error getting checkpoint state: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[API] Error getting checkpoint state: {e}", exc_info=True)
 
     workflow_dict = dict(workflow_row)
     # Convert string timestamps to datetime
@@ -238,6 +317,28 @@ async def resume_workflow_execution(
 ):
     """Resume workflow execution after human input"""
     try:
+        # Save checkpoint resolution to database for audit trail
+        try:
+            # Get current checkpoint ID from LangGraph state
+            state = await compiled_workflow.aget_state(config)
+            if state and hasattr(state, 'interrupts') and state.interrupts:
+                interrupt_obj = state.interrupts[0]
+                if hasattr(interrupt_obj, 'value'):
+                    checkpoint_data = interrupt_obj.value
+                    if isinstance(checkpoint_data, dict):
+                        checkpoint_id = checkpoint_data.get("checkpoint_id")
+                        if checkpoint_id:
+                            await save_checkpoint_resolution(
+                                checkpoint_id=checkpoint_id,
+                                action=resolution.get("action", "unknown"),
+                                edited_content=resolution.get("edited_content"),
+                                user_notes=resolution.get("user_notes")
+                            )
+                            logger.debug(f"[API] ✓ Saved checkpoint resolution for {checkpoint_id}")
+        except Exception as checkpoint_error:
+            logger.warning(f"[API] Failed to save checkpoint resolution: {checkpoint_error}")
+            # Don't fail the workflow if checkpoint save fails
+
         # Resume with Command - use async API
         result = await compiled_workflow.ainvoke(
             Command(resume=resolution),
@@ -246,26 +347,15 @@ async def resume_workflow_execution(
 
         # Check if workflow completed or hit another checkpoint
         if result:
-            active_workflows[workflow_id]["status"] = WorkflowStatus.AWAITING_CHECKPOINT.value
-            active_workflows[workflow_id]["last_result"] = result
+            # Hit another checkpoint - mark as awaiting (atomic update)
+            await status_manager.mark_awaiting_checkpoint(workflow_id, result, validate=False)
         else:
-            # Workflow completed
-            active_workflows[workflow_id]["status"] = WorkflowStatus.COMPLETED.value
-
-            async with db.get_connection() as conn:
-                await conn.execute(
-                    "UPDATE workflows SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-                    (WorkflowStatus.COMPLETED.value, datetime.now().isoformat(),
-                     datetime.now().isoformat(), workflow_id)
-                )
-                await conn.commit()
+            # Workflow completed - mark as done (atomic update with cleanup)
+            await status_manager.mark_completed(workflow_id, validate=False)
 
     except Exception as e:
-        print(f"Resume failed for {workflow_id}: {e}")
-        import traceback
-        traceback.print_exc()
-        active_workflows[workflow_id]["status"] = WorkflowStatus.FAILED.value
-        active_workflows[workflow_id]["error"] = str(e)
+        logger.error(f"Resume failed for {workflow_id}: {e}", exc_info=True)
+        await status_manager.mark_failed(workflow_id, e, validate=False)
 
 @router.get("/{workflow_id}/history")
 async def get_workflow_history(workflow_id: str):
@@ -324,9 +414,7 @@ async def get_workflow_history(workflow_id: str):
 
             history.append(history_item)
     except Exception as e:
-        print(f"Error getting history: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error getting history: {e}", exc_info=True)
         history = []
 
     return {"workflow_id": workflow_id, "history": history}

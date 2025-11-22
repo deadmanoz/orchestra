@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Check, X, Edit3 } from 'lucide-react';
 import type { Checkpoint } from '../types';
 import { useResumeWorkflow } from '../hooks/useResumeWorkflow';
+import { CheckpointStep, CheckpointAction } from '../constants/workflowStatus';
 
 interface Props {
   workflowId: string;
@@ -11,6 +12,22 @@ interface Props {
 
 // Format action names for display (remove underscores, capitalize)
 function formatActionName(action: string): string {
+  // Provide better names for specific actions
+  const actionNames: Record<string, string> = {
+    [CheckpointAction.EDIT_AND_CONTINUE]: 'Edit Full Prompt',
+    [CheckpointAction.EDIT_FULL_PROMPT]: 'Edit Full Prompt',
+    [CheckpointAction.SEND_TO_REVIEWERS]: 'Send to Reviewers',
+    [CheckpointAction.SEND_TO_PLANNER_FOR_REVISION]: 'Send to Planner',
+    [CheckpointAction.APPROVE_PLAN]: 'Approve Plan',
+    [CheckpointAction.APPROVE]: 'Approve',
+    [CheckpointAction.CANCEL]: 'Cancel'
+  };
+
+  if (actionNames[action]) {
+    return actionNames[action];
+  }
+
+  // Default: convert snake_case to Title Case
   return action
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -19,17 +36,17 @@ function formatActionName(action: string): string {
 
 // Get content labels based on checkpoint step
 function getContentLabels(stepName: string, isEditing: boolean): { title: string; editButton: string } {
-  if (stepName === 'edit_reviewer_prompt') {
+  if (stepName === CheckpointStep.EDIT_REVIEWER_PROMPT) {
     return {
       title: isEditing ? '✏️ Editing Reviewer Prompt' : '📝 Reviewer Prompt',
       editButton: isEditing ? 'Preview' : 'Edit Reviewer Prompt'
     };
-  } else if (stepName === 'edit_planner_prompt') {
+  } else if (stepName === CheckpointStep.EDIT_PLANNER_PROMPT) {
     return {
       title: isEditing ? '✏️ Editing Planner Prompt' : '📝 Planner Prompt',
       editButton: isEditing ? 'Preview' : 'Edit Planner Prompt'
     };
-  } else if (stepName === 'reviews_ready_for_consolidation') {
+  } else if (stepName === CheckpointStep.REVIEWS_READY_FOR_CONSOLIDATION) {
     return {
       title: isEditing ? '✏️ Editing Consolidated Feedback' : '📊 Consolidated Review Feedback',
       editButton: isEditing ? 'Preview' : 'Edit Consolidated Feedback'
@@ -301,7 +318,7 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
               gap: '0.5rem'
             }}
           >
-            {action === 'cancel' && <X size={18} />}
+            {action === CheckpointAction.CANCEL && <X size={18} />}
             {formatActionName(action)}
           </button>
         ))}
