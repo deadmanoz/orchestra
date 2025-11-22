@@ -12,6 +12,7 @@ Orchestra provides a web interface for orchestrating multiple AI coding agents (
 - **Human-in-the-Loop**: Mandatory checkpoints for reviewing and editing agent outputs
 - **Real-time Updates**: WebSocket support with automatic reconnection and live workflow monitoring
 - **Plan-Review Pattern**: Built-in workflow for iterative planning with multi-agent review
+- **Conversation History**: Full context preserved across planning/review iterations
 - **Persistent State**: SQLite-based checkpointing for workflow resumption
 - **Workspace Integration**: Support for codebase-specific workflows with workspace paths
 - **Error Resilience**: React Error Boundary for graceful frontend error handling
@@ -22,7 +23,7 @@ Orchestra provides a web interface for orchestrating multiple AI coding agents (
 ```
 ┌─────────────┐     HTTP/WS      ┌──────────────┐     LangGraph     ┌────────────┐
 │   React     │ ←──────────────→ │   FastAPI    │ ←───────────────→ │   Agents   │
-│  Frontend   │                  │   Backend    │                   │  (Mocks)   │
+│  Frontend   │                  │   Backend    │                   │ (CLI+Mock) │
 └─────────────┘                  └──────────────┘                   └────────────┘
                                          │
                                          ↓
@@ -36,8 +37,9 @@ Orchestra provides a web interface for orchestrating multiple AI coding agents (
 
 - **Frontend**: React + TypeScript + TanStack Query
 - **Backend**: FastAPI + LangGraph + AsyncSqliteSaver
-- **Agents**: Mock agents (ready for real CLI integration)
+- **Agents**: ClaudeAgent (CLI subprocess) with MockAgent fallback
 - **Database**: SQLite for workflows, checkpoints, and messages
+- **Services**: WorkflowStatusManager, CheckpointManager for centralized logic
 
 ## Quick Start
 
@@ -239,14 +241,16 @@ class MyWorkflow:
         return graph.compile(checkpointer=self.checkpointer)
 ```
 
-### Integrating Real CLI Agents
+### Extending CLI Agent Support
 
-Replace `MockAgent` in `backend/agents/`:
+The system currently supports ClaudeAgent with full CLI integration. To add additional CLI agents:
 
-1. Create agent class implementing `AgentInterface`
-2. Use subprocess pattern for CLI execution
-3. Implement `start()`, `stop()`, `execute()` methods
-4. Update `AgentFactory` to create real agents
+1. Create agent class extending `JSONCLIAgent` (see `backend/agents/claude_agent.py`)
+2. Implement `get_cli_command()` and `extract_content_from_json()` methods
+3. Add routing logic in `AgentFactory` (see `backend/agents/factory.py`)
+4. Configure CLI path in `backend/config.py`
+
+See `docs/CLI_AGENT_INTEGRATION.md` for detailed integration guide.
 
 ### API Endpoints
 
@@ -286,25 +290,40 @@ npm run lint       # Code quality check
 
 ## Contributing
 
-### Recent Enhancements
+### Completed Improvements (2024-2025)
 
-Phase 1 is now complete! Recent additions include:
+**Phase 1-3: Architectural Enhancements**
+- ✅ **WorkflowStatusManager**: Centralized status management with state machine validation
+- ✅ **CheckpointManager**: Eliminated ~300 lines of duplicated checkpoint code
+- ✅ **Atomic Transactions**: Prevents data loss on server crashes
+- ✅ **Checkpoint Audit Trail**: Full persistence of user actions in database
+- ✅ **Memory Leak Prevention**: Automatic cleanup of completed workflows
+- ✅ **Type-Safe Constants**: Frontend/backend status constant alignment
 
-- ✅ **Error Boundary**: React Error Boundary component for graceful error handling
-- ✅ **WebSocket Improvements**: Enhanced error handling and automatic reconnection logic
-- ✅ **Workspace Path Support**: Codebase-specific workflow execution with workspace paths
-- ✅ **Comprehensive Test Suite**: 50 tests with 96%+ pass rate
+**CLI Agent Integration**
+- ✅ **ClaudeAgent**: Full subprocess integration with Claude Code CLI
+- ✅ **Conversation History**: Agents receive full context across iterations
+- ✅ **JSON Response Parsing**: Supports multiple response patterns
+- ✅ **Configurable Execution**: Workspace paths, timeouts, error handling
 
-### Phase 2: Future Enhancements
+**Developer Experience**
+- ✅ **Structured Logging**: Production-ready logging framework
+- ✅ **Error Resilience**: React Error Boundary and improved error handling
+- ✅ **WebSocket Improvements**: Auto-reconnection and better error handling
+- ✅ **Comprehensive Test Suite**: 50+ tests with 96% pass rate
 
-The following features are planned for Phase 2:
+### Planned Enhancements
 
-- [ ] Real CLI agent integration (Claude Code, Codex, Gemini)
+**Agent Ecosystem**
+- [ ] CodexAgent and GeminiAgent CLI integration
+- [ ] AgentAPI migration for persistent sessions (80-95% latency reduction)
+- [ ] Agent result caching and cost tracking
+
+**Features**
 - [ ] Authentication and multi-user support
 - [ ] Workflow templates and customization
 - [ ] Export workflows to PDF/Markdown
-- [ ] Workflow visualization
-- [ ] Agent result caching
+- [ ] Advanced workflow visualization
 - [ ] Parallel workflow execution
 
 ## License

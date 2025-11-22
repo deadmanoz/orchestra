@@ -1,6 +1,15 @@
 # Local Testing Guide for CLI Agents
 
-This guide will help you test the CLI agent integration (ClaudeAgent, CodexAgent, GeminiAgent) in your local development environment.
+This guide will help you test the CLI agent integration in your local development environment.
+
+> **Current Implementation Status**:
+> - ✅ **ClaudeAgent**: Fully implemented - ready for testing
+> - ⏳ **CodexAgent**: Test examples provided as templates for future implementation
+> - ⏳ **GeminiAgent**: Test examples provided as templates for future implementation
+>
+> You can test ClaudeAgent integration using the real Claude Code CLI. The CodexAgent
+> and GeminiAgent test examples are provided as reference implementations for when
+> those agents are added to the system.
 
 ## Prerequisites
 
