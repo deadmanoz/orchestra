@@ -167,7 +167,8 @@ class PlanReviewWorkflow:
 
     async def _review_agents_node(self, state: PlanReviewState) -> dict:
         """Node for parallel review agent execution"""
-        logger.info(f"[ReviewAgents] Executing parallel reviews")
+        iteration = state.get('iteration_count', 0)
+        logger.info(f"[ReviewAgents] Executing parallel reviews (iteration {iteration})")
 
         # Get review agents
         review_agents = await self.agent_factory.get_review_agents(workspace_path=self.workspace_path)
@@ -182,8 +183,17 @@ class PlanReviewWorkflow:
                 agent.send_message(reviewer_prompt)
                 for agent in review_agents
             ]
+        elif iteration > 0:
+            # Revision with FULL conversation history for context
+            # Review agents can reference their previous reviews
+            logger.info(f"[ReviewAgents] Using conversation history template (iteration {iteration})")
+            plan_to_review = state.get("user_edits") or state["current_plan"]
+            review_tasks = [
+                self._execute_review_agent_with_history(agent, plan_to_review, state["messages"])
+                for agent in review_agents
+            ]
         else:
-            # Use the default template (original behavior)
+            # Initial review - use default template
             logger.info(f"[ReviewAgents] Using default reviewer prompt template")
             plan_to_review = state.get("user_edits") or state["current_plan"]
             review_tasks = [
@@ -215,8 +225,19 @@ class PlanReviewWorkflow:
         }
 
     async def _execute_review_agent(self, agent: AgentInterface, plan: str) -> str:
-        """Execute single review agent"""
+        """Execute single review agent (initial review, no history)"""
         prompt = self.templates.review_request(plan, agent.name)
+        return await agent.send_message(prompt)
+
+    async def _execute_review_agent_with_history(
+        self,
+        agent: AgentInterface,
+        plan: str,
+        messages: list
+    ) -> str:
+        """Execute review agent with full conversation history"""
+        prompt = self.templates.review_with_history(messages, plan, agent.name)
+        logger.debug(f"[{agent.name}] Prompt with history length: {len(prompt)} chars")
         return await agent.send_message(prompt)
 
     async def _review_checkpoint_node(self, state: PlanReviewState) -> dict:

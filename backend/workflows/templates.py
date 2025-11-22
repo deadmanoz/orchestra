@@ -112,3 +112,66 @@ Focus on:
 
 Provide direct, unambiguous feedback that will help improve the plan.
 """
+
+    @staticmethod
+    def review_with_history(messages: list[BaseMessage], plan: str, agent_name: str) -> str:
+        """
+        Build review prompt with full conversation history for context.
+
+        This allows review agents to reference their previous reviews and see
+        how the plan evolved based on their feedback.
+        """
+        # Build conversation history section
+        history_lines = [f"You are a REVIEW AGENT ({agent_name}). Here is the conversation history:\n"]
+
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                # User messages (requirements, feedback)
+                role = "USER"
+                content = msg.content
+            elif isinstance(msg, AIMessage):
+                # Previous plans and reviews
+                if msg.name == "planning_agent":
+                    role = "PLANNING AGENT"
+                    # Truncate long plans in history
+                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+                elif msg.name and msg.name.startswith("review_agent"):
+                    # Check if this is OUR previous review
+                    role = f"YOU (previous review)" if agent_name.lower() in msg.name.lower() else f"OTHER REVIEWER"
+                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+                else:
+                    role = f"AGENT ({msg.name})"
+                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+            else:
+                continue
+
+            history_lines.append(f"\n--- {role} ---\n{content}\n")
+
+        history_text = "".join(history_lines)
+
+        return f"""{history_text}
+
+The PLANNING AGENT has now revised the plan. Here is the CURRENT VERSION to review:
+
+**** CURRENT PLAN (v{len([m for m in messages if isinstance(m, AIMessage) and m.name == 'planning_agent']) + 1}) START ****
+{plan}
+**** CURRENT PLAN END ****
+
+Based on the conversation history above, please provide your expert review feedback.
+
+IMPORTANT:
+- Reference your previous reviews if you gave feedback before
+- Note if your previous concerns were addressed or ignored
+- Acknowledge improvements made since your last review
+- Identify new issues introduced in this version
+- Be specific about what changed and whether it's better or worse
+
+Focus on:
+- Technical feasibility
+- Architecture concerns
+- Missing considerations
+- Timeline realism
+- Security and scalability
+
+Provide direct, unambiguous feedback that will help improve the plan.
+"""
