@@ -317,6 +317,10 @@ async def resume_workflow_execution(
 ):
     """Resume workflow execution after human input"""
     try:
+        # Mark workflow as running before executing agents
+        await status_manager.mark_running(workflow_id, validate=False)
+        logger.info(f"Workflow {workflow_id} resumed and marked as running")
+
         # Save checkpoint resolution to database for audit trail
         try:
             # Get current checkpoint ID from LangGraph state
