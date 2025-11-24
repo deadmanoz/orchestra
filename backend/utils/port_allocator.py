@@ -1,6 +1,6 @@
 import asyncio
 from typing import Optional, Set
-from backend.config import settings
+from backend.settings import settings
 
 class PortAllocator:
     """Manages port allocation for agent subprocesses"""

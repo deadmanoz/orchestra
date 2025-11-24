@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from backend.agents.factory import AgentFactory
-from backend.config import settings
+from backend.settings import settings
 
 
 async def test_factory_routing():

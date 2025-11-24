@@ -5,7 +5,7 @@ import asyncio
 from backend.agents.base import AgentInterface
 from backend.agents.mock_agent import MockAgent
 from backend.agents.factory import AgentFactory
-from backend.config import settings
+from backend.settings import settings
 
 
 class TestMockAgent:

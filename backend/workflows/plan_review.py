@@ -9,7 +9,7 @@ import logging
 
 from backend.workflows.templates import PromptTemplates
 from backend.agents.base import AgentInterface
-from backend.config import settings
+from backend.settings import settings
 from backend.services.checkpoint_manager import CheckpointManager
 
 logger = logging.getLogger(__name__)

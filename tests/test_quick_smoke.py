@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import asyncio
 from backend.agents.factory import agent_factory
-from backend.config import settings
+from backend.settings import settings
 
 
 async def smoke_test():

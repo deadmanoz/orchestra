@@ -6,7 +6,7 @@ from typing import List
 from pathlib import Path
 
 from backend.agents.cli_agent import CLIAgent, CLIAgentError
-from backend.config import settings
+from backend.settings import settings
 
 logger = logging.getLogger(__name__)
 

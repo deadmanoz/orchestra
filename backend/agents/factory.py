@@ -6,7 +6,7 @@ from backend.agents.mock_agent import MockAgent
 from backend.agents.claude_agent import ClaudeAgent
 from backend.agents.codex_agent import CodexAgent
 from backend.agents.gemini_agent import GeminiAgent
-from backend.config import settings
+from backend.settings import settings
 
 logger = logging.getLogger(__name__)
 
