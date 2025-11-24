@@ -32,6 +32,7 @@ status_manager = WorkflowStatusManager(active_workflows)
 async def save_checkpoint_created(checkpoint_data: dict) -> None:
     """
     Save checkpoint creation to database for audit trail.
+    Uses INSERT OR IGNORE to handle duplicate checkpoint IDs from polling.
 
     Args:
         checkpoint_data: Checkpoint data from LangGraph interrupt
@@ -39,7 +40,7 @@ async def save_checkpoint_created(checkpoint_data: dict) -> None:
     async with db.get_connection() as conn:
         await conn.execute(
             """
-            INSERT INTO user_checkpoints (
+            INSERT OR IGNORE INTO user_checkpoints (
                 id, workflow_id, checkpoint_number, step_name,
                 agent_outputs, status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
