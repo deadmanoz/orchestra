@@ -27,7 +27,7 @@ setup:
 # Run backend development server
 backend:
     @echo "🎼 Starting backend server..."
-    python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+    python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 3030
 
 # Run frontend development server
 frontend:
@@ -92,7 +92,7 @@ clean-all: clean
 # Check backend health
 health:
     @echo "🏥 Checking backend health..."
-    curl -s http://localhost:8000/health | python -m json.tool || echo "❌ Backend not running"
+    curl -s http://localhost:3030/health | python -m json.tool || echo "❌ Backend not running"
 
 # View backend logs (if running in background)
 logs:
@@ -152,8 +152,8 @@ info:
     @echo "Testing: pytest"
     @echo ""
     @echo "📍 Endpoints:"
-    @echo "  Backend:  http://localhost:8000"
+    @echo "  Backend:  http://localhost:3030"
     @echo "  Frontend: http://localhost:5173"
-    @echo "  API Docs: http://localhost:8000/docs"
+    @echo "  API Docs: http://localhost:3030/docs"
     @echo ""
     @echo "Run 'just --list' to see all commands"
