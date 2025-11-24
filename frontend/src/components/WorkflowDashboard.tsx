@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Workflow, Message, AgentExecution, Checkpoint } from '../types';
 import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2 } from 'lucide-react';
 import { WorkflowStatus, CheckpointStep } from '../constants/workflowStatus';
+import IterationBreadcrumb from './IterationBreadcrumb';
 
 interface Props {
   workflow: Workflow;
@@ -243,6 +244,13 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
                 </>
               )}
             </div>
+
+            {/* Iteration Breadcrumb Trail */}
+            <IterationBreadcrumb
+              workflowId={workflow.id}
+              currentIteration={pendingCheckpoint?.iteration}
+            />
+
             {workflow.workspace_path && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888', fontSize: '0.9rem' }}>
                 <Folder size={16} />
