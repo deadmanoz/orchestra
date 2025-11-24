@@ -6,11 +6,13 @@ from datetime import datetime
 import operator
 import asyncio
 import logging
+import time
 
 from backend.workflows.templates import PromptTemplates
 from backend.agents.base import AgentInterface
 from backend.settings import settings
 from backend.services.checkpoint_manager import CheckpointManager
+from backend.db.connection import db
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,75 @@ class PlanReviewWorkflow:
         # We'll enter the context manager in an async setup method
         self.checkpointer = None
         self._setup_complete = False
+
+    async def _create_agent_execution(
+        self,
+        workflow_id: str,
+        agent_name: str,
+        agent_type: str,
+        input_content: str
+    ) -> int:
+        """
+        Create an agent execution record in the database.
+
+        Returns:
+            The execution ID
+        """
+        async with db.get_connection() as conn:
+            cursor = await conn.execute(
+                """
+                INSERT INTO agent_executions (
+                    workflow_id, agent_name, agent_type, input_content,
+                    status, started_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    workflow_id,
+                    agent_name,
+                    agent_type,
+                    input_content,
+                    "running",
+                    datetime.now().isoformat()
+                )
+            )
+            await conn.commit()
+            return cursor.lastrowid
+
+    async def _complete_agent_execution(
+        self,
+        execution_id: int,
+        output_content: str,
+        execution_time_ms: int,
+        status: str = "completed"
+    ) -> None:
+        """
+        Update an agent execution record when complete.
+
+        Args:
+            execution_id: The execution ID
+            output_content: The agent's output
+            execution_time_ms: Execution time in milliseconds
+            status: Final status (completed or failed)
+        """
+        async with db.get_connection() as conn:
+            await conn.execute(
+                """
+                UPDATE agent_executions
+                SET output_content = ?,
+                    status = ?,
+                    completed_at = ?,
+                    execution_time_ms = ?
+                WHERE id = ?
+                """,
+                (
+                    output_content,
+                    status,
+                    datetime.now().isoformat(),
+                    execution_time_ms,
+                    execution_id
+                )
+            )
+            await conn.commit()
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow"""
@@ -95,6 +166,7 @@ class PlanReviewWorkflow:
     async def _planning_agent_node(self, state: PlanReviewState) -> dict:
         """Node for planning agent execution"""
         iteration = state.get('iteration_count', 0)
+        workflow_id = state.get('workflow_id')
         logger.info(f"[PlanningAgent] Starting iteration {iteration}")
 
         # Get planning agent
@@ -119,9 +191,37 @@ class PlanReviewWorkflow:
             initial_message = state["messages"][-1].content
             prompt = self.templates.planning_initial(initial_message)
 
-        # Execute agent
+        # Create execution record
+        execution_id = await self._create_agent_execution(
+            workflow_id=workflow_id,
+            agent_name=planning_agent.name,
+            agent_type="planning",
+            input_content=prompt[:1000]  # Truncate for storage
+        )
+
+        # Execute agent with timing
         logger.debug(f"[PlanningAgent] Prompt length: {len(prompt)} chars")
-        plan = await planning_agent.send_message(prompt)
+        start_time = time.time()
+        try:
+            plan = await planning_agent.send_message(prompt)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Update execution record
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=plan,
+                execution_time_ms=execution_time_ms,
+                status="completed"
+            )
+        except Exception as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+            raise
 
         return {
             "current_plan": plan,
@@ -168,6 +268,7 @@ class PlanReviewWorkflow:
     async def _review_agents_node(self, state: PlanReviewState) -> dict:
         """Node for parallel review agent execution"""
         iteration = state.get('iteration_count', 0)
+        workflow_id = state.get('workflow_id')
         logger.info(f"[ReviewAgents] Executing parallel reviews (iteration {iteration})")
 
         # Get review agents
@@ -180,7 +281,7 @@ class PlanReviewWorkflow:
             reviewer_prompt = state["reviewer_prompt"]
             # Execute all reviews in parallel with the same custom prompt
             review_tasks = [
-                agent.send_message(reviewer_prompt)
+                self._execute_review_agent_tracked(agent, reviewer_prompt, workflow_id)
                 for agent in review_agents
             ]
         elif iteration > 0:
@@ -189,7 +290,7 @@ class PlanReviewWorkflow:
             logger.info(f"[ReviewAgents] Using conversation history template (iteration {iteration})")
             plan_to_review = state.get("user_edits") or state["current_plan"]
             review_tasks = [
-                self._execute_review_agent_with_history(agent, plan_to_review, state["messages"])
+                self._execute_review_agent_with_history_tracked(agent, plan_to_review, state["messages"], workflow_id)
                 for agent in review_agents
             ]
         else:
@@ -197,7 +298,7 @@ class PlanReviewWorkflow:
             logger.info(f"[ReviewAgents] Using default reviewer prompt template")
             plan_to_review = state.get("user_edits") or state["current_plan"]
             review_tasks = [
-                self._execute_review_agent(agent, plan_to_review)
+                self._execute_review_agent_tracked(agent, self.templates.review_request(plan_to_review, agent.name), workflow_id)
                 for agent in review_agents
             ]
 
@@ -239,6 +340,88 @@ class PlanReviewWorkflow:
         prompt = self.templates.review_with_history(messages, plan, agent.name)
         logger.debug(f"[{agent.name}] Prompt with history length: {len(prompt)} chars")
         return await agent.send_message(prompt)
+
+    async def _execute_review_agent_tracked(
+        self,
+        agent: AgentInterface,
+        prompt: str,
+        workflow_id: str
+    ) -> str:
+        """Execute review agent with database tracking"""
+        # Create execution record
+        execution_id = await self._create_agent_execution(
+            workflow_id=workflow_id,
+            agent_name=agent.name,
+            agent_type="review",
+            input_content=prompt[:1000]  # Truncate for storage
+        )
+
+        # Execute with timing
+        start_time = time.time()
+        try:
+            result = await agent.send_message(prompt)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Update execution record
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=result,
+                execution_time_ms=execution_time_ms,
+                status="completed"
+            )
+            return result
+        except Exception as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+            raise
+
+    async def _execute_review_agent_with_history_tracked(
+        self,
+        agent: AgentInterface,
+        plan: str,
+        messages: list,
+        workflow_id: str
+    ) -> str:
+        """Execute review agent with history and database tracking"""
+        prompt = self.templates.review_with_history(messages, plan, agent.name)
+        logger.debug(f"[{agent.name}] Prompt with history length: {len(prompt)} chars")
+
+        # Create execution record
+        execution_id = await self._create_agent_execution(
+            workflow_id=workflow_id,
+            agent_name=agent.name,
+            agent_type="review",
+            input_content=prompt[:1000]  # Truncate for storage
+        )
+
+        # Execute with timing
+        start_time = time.time()
+        try:
+            result = await agent.send_message(prompt)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Update execution record
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=result,
+                execution_time_ms=execution_time_ms,
+                status="completed"
+            )
+            return result
+        except Exception as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+            raise
 
     async def _review_checkpoint_node(self, state: PlanReviewState) -> dict:
         """Human checkpoint after reviews - decide next action"""
