@@ -17,6 +17,7 @@ class ClaudeAgent(JSONCLIAgent):
     Command format: claude --print --output-format json "<prompt>"
 
     Supports JSON schema via --json-schema flag for structured validation.
+    Supports plan mode via --plan flag to restrict to planning only (no code execution).
     """
 
     def __init__(
@@ -24,7 +25,8 @@ class ClaudeAgent(JSONCLIAgent):
         name: str,
         role: str = "general",
         workspace_path: str = None,
-        timeout: int = None
+        timeout: int = None,
+        plan_mode: bool = False
     ):
         super().__init__(
             name=name,
@@ -35,6 +37,7 @@ class ClaudeAgent(JSONCLIAgent):
             use_stdin=True  # Claude CLI works better with stdin for stream-json
         )
         self.cli_path = settings.claude_cli_path
+        self.plan_mode = plan_mode
 
     def get_cli_command(self, message: str) -> List[str]:
         """
@@ -49,11 +52,18 @@ class ClaudeAgent(JSONCLIAgent):
         Returns:
             Command list without the message (message goes to stdin)
         """
-        return [
+        cmd = [
             self.cli_path,
             "--output-format",   # Specify output format
             "json",              # Single JSON blob (not streaming) to avoid truncation
         ]
+
+        # Add plan mode flag if enabled (restricts to planning, no code execution)
+        if self.plan_mode:
+            cmd.append("--plan")
+            logger.debug(f"[{self.name}] Plan mode enabled - agent will only plan, not execute code")
+
+        return cmd
 
     def extract_content_from_json(self, data: dict) -> str:
         """

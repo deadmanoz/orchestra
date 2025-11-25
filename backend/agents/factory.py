@@ -65,11 +65,16 @@ class AgentFactory:
         """
         # Determine agent type from name prefix
         if name.startswith("claude"):
+            # Enable plan mode for planning role to prevent accidental code execution
+            plan_mode = (role == "planning")
+            if plan_mode:
+                logger.info(f"[Factory] Creating Claude agent '{name}' with plan mode enabled")
             return ClaudeAgent(
                 name=name,
                 role=role,
                 workspace_path=workspace_path,
-                timeout=timeout
+                timeout=timeout,
+                plan_mode=plan_mode
             )
         elif name.startswith("codex"):
             return CodexAgent(
