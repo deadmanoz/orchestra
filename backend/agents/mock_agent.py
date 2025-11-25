@@ -115,7 +115,7 @@ Based on the requirements provided, here's a comprehensive plan for implementati
 """
 
     def _generate_review_response(self, prompt: str) -> str:
-        return f"""# Review Feedback from {self.name}
+        return f"""# Review Feedback
 
 ## Overall Assessment
 The plan is well-structured and comprehensive, demonstrating good understanding of modern web application architecture.

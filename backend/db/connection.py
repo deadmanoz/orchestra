@@ -1,6 +1,6 @@
 import aiosqlite
 from pathlib import Path
-from backend.config import settings
+from backend.settings import settings
 
 class Database:
     def __init__(self):

@@ -172,7 +172,6 @@ class CLIAgent(AgentInterface):
             logger.info(f"[{self.name}] Raw output: stdout={len(stdout_str)} chars, stderr={len(stderr_str)} chars, returncode={process.returncode}")
 
             # DEBUG: Write full stdout to file for inspection
-            import os
             debug_dir = Path("debug_output")
             debug_dir.mkdir(exist_ok=True)
             debug_file = debug_dir / f"{self.name}_output.txt"

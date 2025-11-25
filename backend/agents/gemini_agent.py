@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 from backend.agents.cli_agent import JSONCLIAgent
-from backend.config import settings
+from backend.settings import settings
 
 logger = logging.getLogger(__name__)
 

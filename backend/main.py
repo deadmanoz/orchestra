@@ -3,10 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
-from backend.config import settings
+from backend.settings import settings
 from backend.config.logging_config import setup_logging
 from backend.db.connection import db
-from backend.api import workflows, websocket
+from backend.api import workflows, websocket, plans
 from backend.agents.factory import agent_factory
 
 # Initialize logging
@@ -51,6 +51,7 @@ app.add_middleware(
 # Include routers
 app.include_router(workflows.router)
 app.include_router(websocket.router)
+app.include_router(plans.router)
 
 @app.get("/health")
 async def health_check():

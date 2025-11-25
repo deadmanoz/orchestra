@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 import json
 import aiosqlite
+import os
 from pathlib import Path
 
 from backend.models.workflow import (
@@ -12,6 +13,7 @@ from backend.models.workflow import (
 from backend.workflows.plan_review import PlanReviewWorkflow
 from backend.agents.factory import agent_factory
 from backend.db.connection import db
+from backend.settings import settings
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from backend.services.workflow_manager import WorkflowStatusManager
@@ -32,6 +34,7 @@ status_manager = WorkflowStatusManager(active_workflows)
 async def save_checkpoint_created(checkpoint_data: dict) -> None:
     """
     Save checkpoint creation to database for audit trail.
+    Uses INSERT OR IGNORE to handle duplicate checkpoint IDs from polling.
 
     Args:
         checkpoint_data: Checkpoint data from LangGraph interrupt
@@ -39,7 +42,7 @@ async def save_checkpoint_created(checkpoint_data: dict) -> None:
     async with db.get_connection() as conn:
         await conn.execute(
             """
-            INSERT INTO user_checkpoints (
+            INSERT OR IGNORE INTO user_checkpoints (
                 id, workflow_id, checkpoint_number, step_name,
                 agent_outputs, status, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -106,20 +109,47 @@ async def save_checkpoint_resolution(
         )
         await conn.commit()
 
-def validate_workspace_path(workspace_path: Optional[str]) -> Optional[str]:
-    """Validate and resolve workspace path"""
+def validate_workspace_path(workspace_path: Optional[str]) -> str:
+    """
+    Validate and resolve workspace path.
+
+    If no path provided, use the working_directory from settings.
+    Creates the directory if it doesn't exist.
+
+    Returns:
+        Absolute path to workspace directory
+    """
+    # Use default workspace if none provided
     if not workspace_path:
-        return None
+        workspace_path = settings.working_directory
 
     # Resolve to absolute path
     resolved_path = Path(workspace_path).resolve()
 
-    # Check if path exists and is a directory
+    # Create directory if it doesn't exist
     if not resolved_path.exists():
-        raise HTTPException(status_code=400, detail=f"Workspace path does not exist: {workspace_path}")
+        logger.info(f"Creating workspace directory: {resolved_path}")
+        try:
+            resolved_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create workspace directory {workspace_path}: {str(e)}"
+            )
 
+    # Check if it's a directory
     if not resolved_path.is_dir():
-        raise HTTPException(status_code=400, detail=f"Workspace path is not a directory: {workspace_path}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Workspace path is not a directory: {workspace_path}"
+        )
+
+    # Check if writable
+    if not os.access(resolved_path, os.W_OK):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Workspace directory is not writable: {resolved_path}"
+        )
 
     # Convert to string
     return str(resolved_path)
@@ -278,10 +308,34 @@ async def get_workflow(workflow_id: str):
     workflow_dict['created_at'] = datetime.fromisoformat(workflow_dict['created_at'])
     workflow_dict['updated_at'] = datetime.fromisoformat(workflow_dict['updated_at'])
 
+    # Fetch agent executions for this workflow
+    agent_executions = []
+    async with db.get_connection() as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            """
+            SELECT * FROM agent_executions
+            WHERE workflow_id = ?
+            ORDER BY started_at ASC
+            """,
+            (workflow_id,)
+        )
+        rows = await cursor.fetchall()
+        agent_executions = [dict(row) for row in rows]
+
+    # Add approval status to review agents
+    from backend.services.review_analyzer import analyze_review_approval
+    for execution in agent_executions:
+        if execution.get('agent_type') == 'review' and execution.get('output_content'):
+            execution['approval_status'] = analyze_review_approval(execution['output_content'])
+        else:
+            execution['approval_status'] = None
+
     return WorkflowStateSnapshot(
         workflow=WorkflowResponse(**workflow_dict),
         pending_checkpoint=pending_checkpoint,
-        recent_messages=[]
+        recent_messages=[],
+        agent_executions=agent_executions
     )
 
 @router.post("/{workflow_id}/resume")
@@ -317,6 +371,10 @@ async def resume_workflow_execution(
 ):
     """Resume workflow execution after human input"""
     try:
+        # Mark workflow as running before executing agents
+        await status_manager.mark_running(workflow_id, validate=False)
+        logger.info(f"Workflow {workflow_id} resumed and marked as running")
+
         # Save checkpoint resolution to database for audit trail
         try:
             # Get current checkpoint ID from LangGraph state

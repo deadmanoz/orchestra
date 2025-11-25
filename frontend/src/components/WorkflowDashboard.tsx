@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { Workflow, Message, AgentExecution, Checkpoint } from '../types';
-import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2 } from 'lucide-react';
+import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { WorkflowStatus, CheckpointStep } from '../constants/workflowStatus';
+import IterationBreadcrumb from './IterationBreadcrumb';
 
 interface Props {
   workflow: Workflow;
@@ -34,6 +35,13 @@ if (typeof document !== 'undefined' && !document.getElementById('loader-spin-key
     }
   `;
   document.head.appendChild(style);
+}
+
+// Format duration for display
+function formatDuration(ms?: number): string {
+  if (!ms) return 'N/A';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 // Get descriptive status message based on workflow state
@@ -92,7 +100,32 @@ function getWorkflowStatusMessage(
     if (agentTypes.includes('review')) {
       const iteration = pendingCheckpoint?.iteration ?? 0;
       const planVersion = iteration + 1;
-      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
+
+      // Get all review agent executions (running or completed in this batch)
+      const reviewAgents = executions.filter(e => e.agent_type === 'review');
+
+      // Sort by ID to maintain consistent order (REVIEW AGENT 1, 2, 3)
+      const sortedReviewAgents = reviewAgents.sort((a, b) => a.id - b.id);
+
+      // Get the most recent batch of review agents (those from current iteration)
+      const latestReviewBatch = sortedReviewAgents.slice(-3); // Assume 3 review agents max
+
+      // Build individual status strings
+      const agentStatuses = latestReviewBatch.map((agent, idx) => {
+        const agentNum = idx + 1;
+        if (agent.status === 'completed') {
+          return `Agent ${agentNum} ✓ (${formatDuration(agent.execution_time_ms)})`;
+        } else if (agent.status === 'running') {
+          return `Agent ${agentNum} running...`;
+        } else if (agent.status === 'failed') {
+          return `Agent ${agentNum} ✗`;
+        } else {
+          return `Agent ${agentNum} pending`;
+        }
+      });
+
+      const statusText = agentStatuses.join(' | ');
+      return { message: `Review agents (v${planVersion}): ${statusText}`, showSpinner: true };
     }
 
     if (runningAgents.length > 0) {
@@ -116,7 +149,33 @@ function getWorkflowStatusMessage(
     if (lastExecution.agent_type === 'planning' && lastExecution.status === 'completed') {
       const iteration = pendingCheckpoint?.iteration ?? 0;
       const planVersion = iteration + 1;
-      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
+
+      // Check if there are any review agents that have started
+      const reviewAgents = executions.filter(e => e.agent_type === 'review');
+      if (reviewAgents.length > 0) {
+        // Sort by ID to maintain consistent order
+        const sortedReviewAgents = reviewAgents.sort((a, b) => a.id - b.id);
+        const latestReviewBatch = sortedReviewAgents.slice(-3);
+
+        const agentStatuses = latestReviewBatch.map((agent, idx) => {
+          const agentNum = idx + 1;
+          if (agent.status === 'completed') {
+            return `Agent ${agentNum} ✓ (${formatDuration(agent.execution_time_ms)})`;
+          } else if (agent.status === 'running') {
+            return `Agent ${agentNum} running...`;
+          } else if (agent.status === 'failed') {
+            return `Agent ${agentNum} ✗`;
+          } else {
+            return `Agent ${agentNum} pending`;
+          }
+        });
+
+        const statusText = agentStatuses.join(' | ');
+        return { message: `Review agents (v${planVersion}): ${statusText}`, showSpinner: true };
+      }
+
+      // Fallback if no review agents have started yet
+      return { message: `Review agents starting (v${planVersion})...`, showSpinner: true };
     }
 
     // If last executions were reviews, planning agent should be next (revision)
@@ -163,6 +222,199 @@ function ElapsedTimer({ startTime }: { startTime: string }) {
   };
 
   return <span>{formatElapsed(elapsed)}</span>;
+}
+
+// Component for individual agent execution with collapsible content
+function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!execution.output_content) return;
+
+    try {
+      await navigator.clipboard.writeText(execution.output_content);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case WorkflowStatus.COMPLETED:
+        return <CheckCircle color="#51cf66" size={20} />;
+      case WorkflowStatus.RUNNING:
+        return (
+          <span style={spinAnimation}>
+            <Loader2 color="#ffd43b" size={20} />
+          </span>
+        );
+      case WorkflowStatus.AWAITING_CHECKPOINT:
+        return <Clock color="#ffd43b" size={20} />;
+      case WorkflowStatus.FAILED:
+        return <XCircle color="#ff6b6b" size={20} />;
+      default:
+        return <PlayCircle color="#888" size={20} />;
+    }
+  };
+
+  const formatDuration = (ms?: number) => {
+    if (!ms) return 'N/A';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
+  // Different styling based on agent type
+  const isPlanningAgent = execution.agent_type === 'planning';
+  const borderColor = isPlanningAgent ? '#4c6ef5' : '#51cf66';
+  const backgroundColor = isPlanningAgent ? 'rgba(76, 110, 245, 0.05)' : 'rgba(81, 207, 102, 0.05)';
+  const agentTypeLabel = isPlanningAgent ? '📋 Planning' : '🔍 Review';
+
+  // Approval status indicator for review agents
+  const getApprovalBadge = () => {
+    if (!execution.approval_status || isPlanningAgent) return null;
+
+    if (execution.approval_status === 'approved') {
+      return (
+        <span style={{
+          fontSize: '0.85rem',
+          backgroundColor: 'rgba(81, 207, 102, 0.2)',
+          color: '#51cf66',
+          padding: '0.2rem 0.5rem',
+          borderRadius: '3px',
+          border: '1px solid #51cf66'
+        }}>
+          ✓ Approved
+        </span>
+      );
+    } else if (execution.approval_status === 'has_feedback') {
+      return (
+        <span style={{
+          fontSize: '0.85rem',
+          backgroundColor: 'rgba(255, 212, 59, 0.2)',
+          color: '#ffd43b',
+          padding: '0.2rem 0.5rem',
+          borderRadius: '3px',
+          border: '1px solid #ffd43b'
+        }}>
+          📝 Has Feedback
+        </span>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div
+      style={{
+        padding: '1rem',
+        border: `1px solid ${borderColor}`,
+        borderLeft: `4px solid ${borderColor}`,
+        borderRadius: '4px',
+        backgroundColor: backgroundColor
+      }}
+    >
+      <div
+        onClick={() => execution.output_content && setIsExpanded(!isExpanded)}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          cursor: execution.output_content ? 'pointer' : 'default',
+          userSelect: 'none'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+          {execution.output_content && (
+            isExpanded ? <ChevronDown size={16} color="#888" /> : <ChevronRight size={16} color="#888" />
+          )}
+          <strong>{execution.agent_name}</strong>
+          <span style={{
+            color: borderColor,
+            fontSize: '0.85rem',
+            backgroundColor: 'rgba(0,0,0,0.3)',
+            padding: '0.2rem 0.5rem',
+            borderRadius: '3px'
+          }}>
+            {agentTypeLabel}
+          </span>
+          {getApprovalBadge()}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {getStatusIcon(execution.status)}
+          <span style={{ fontSize: '0.9rem', color: execution.status === WorkflowStatus.COMPLETED ? '#51cf66' : '#888', fontWeight: execution.status === WorkflowStatus.COMPLETED ? 'bold' : 'normal' }}>
+            {execution.status === WorkflowStatus.RUNNING ? (
+              <ElapsedTimer startTime={execution.started_at} />
+            ) : (
+              formatDuration(execution.execution_time_ms)
+            )}
+          </span>
+        </div>
+      </div>
+      {isExpanded && execution.output_content && (
+        <div style={{
+          marginTop: '1rem',
+          paddingTop: '1rem',
+          borderTop: `1px solid ${borderColor}`,
+          position: 'relative'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.5rem'
+          }}>
+            <span style={{ fontSize: '0.85rem', color: '#888' }}>
+              Output ({execution.output_content.length} characters)
+            </span>
+            <button
+              onClick={handleCopy}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.4rem 0.75rem',
+                fontSize: '0.85rem',
+                backgroundColor: isCopied ? '#51cf66' : borderColor,
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {isCopied ? (
+                <>
+                  <Check size={14} />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy size={14} />
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+          <div style={{
+            fontSize: '0.9rem',
+            color: '#ccc',
+            whiteSpace: 'pre-wrap',
+            maxHeight: '600px',
+            overflow: 'auto',
+            padding: '1rem',
+            backgroundColor: '#000',
+            borderRadius: '4px',
+            fontFamily: 'monospace',
+            lineHeight: '1.6'
+          }}>
+            {execution.output_content}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function WorkflowDashboard({ workflow, messages, executions, pendingCheckpoint, onReset }: Props) {
@@ -243,6 +495,13 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
                 </>
               )}
             </div>
+
+            {/* Iteration Breadcrumb Trail */}
+            <IterationBreadcrumb
+              workflowId={workflow.id}
+              currentIteration={pendingCheckpoint?.iteration}
+            />
+
             {workflow.workspace_path && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888', fontSize: '0.9rem' }}>
                 <Folder size={16} />
@@ -269,45 +528,7 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
           <h3 style={{ marginTop: 0 }}>Agent Executions</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {executions.map((execution) => (
-              <div
-                key={execution.id}
-                style={{
-                  padding: '1rem',
-                  border: '1px solid #333',
-                  borderRadius: '4px',
-                  backgroundColor: '#0a0a0a'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <div>
-                    <strong>{execution.agent_name}</strong>
-                    <span style={{ color: '#888', marginLeft: '0.5rem' }}>
-                      ({execution.agent_type})
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {getStatusIcon(execution.status)}
-                    <span style={{ fontSize: '0.9rem', color: execution.status === WorkflowStatus.COMPLETED ? '#51cf66' : '#888', fontWeight: execution.status === WorkflowStatus.COMPLETED ? 'bold' : 'normal' }}>
-                      {execution.status === WorkflowStatus.RUNNING ? (
-                        <ElapsedTimer startTime={execution.started_at} />
-                      ) : (
-                        formatDuration(execution.execution_time_ms)
-                      )}
-                    </span>
-                  </div>
-                </div>
-                {execution.output_content && (
-                  <div style={{
-                    fontSize: '0.9rem',
-                    color: '#ccc',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '200px',
-                    overflow: 'auto'
-                  }}>
-                    {execution.output_content}
-                  </div>
-                )}
-              </div>
+              <AgentExecutionItem key={execution.id} execution={execution} />
             ))}
           </div>
         </div>
