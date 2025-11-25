@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Workflow, Message, AgentExecution, Checkpoint } from '../types';
-import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { WorkflowStatus, CheckpointStep } from '../constants/workflowStatus';
 import IterationBreadcrumb from './IterationBreadcrumb';
 
@@ -227,6 +227,19 @@ function ElapsedTimer({ startTime }: { startTime: string }) {
 // Component for individual agent execution with collapsible content
 function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!execution.output_content) return;
+
+    try {
+      await navigator.clipboard.writeText(execution.output_content);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -312,6 +325,44 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
           position: 'relative'
         }}>
           <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.5rem'
+          }}>
+            <span style={{ fontSize: '0.85rem', color: '#888' }}>
+              Output ({execution.output_content.length} characters)
+            </span>
+            <button
+              onClick={handleCopy}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.4rem 0.75rem',
+                fontSize: '0.85rem',
+                backgroundColor: isCopied ? '#51cf66' : borderColor,
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {isCopied ? (
+                <>
+                  <Check size={14} />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy size={14} />
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+          <div style={{
             fontSize: '0.9rem',
             color: '#ccc',
             whiteSpace: 'pre-wrap',
@@ -324,14 +375,6 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
             lineHeight: '1.6'
           }}>
             {execution.output_content}
-          </div>
-          <div style={{
-            marginTop: '0.5rem',
-            fontSize: '0.8rem',
-            color: '#888',
-            fontStyle: 'italic'
-          }}>
-            💡 Tip: Click and drag to select text, then copy with Ctrl+C (Cmd+C on Mac)
           </div>
         </div>
       )}
