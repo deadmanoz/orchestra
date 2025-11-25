@@ -39,6 +39,14 @@ class Database:
             )
             await db.commit()
 
+        # Migration: Add display_name column to agent_executions if not exists
+        if "display_name" not in column_names:
+            logger.info("[Migration] Adding display_name column to agent_executions")
+            await db.execute(
+                "ALTER TABLE agent_executions ADD COLUMN display_name TEXT"
+            )
+            await db.commit()
+
     def get_connection(self):
         """Get database connection"""
         return aiosqlite.connect(self.db_path)

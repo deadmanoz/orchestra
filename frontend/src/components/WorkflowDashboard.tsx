@@ -336,7 +336,7 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
           {execution.output_content && (
             isExpanded ? <ChevronDown size={16} color="#888" /> : <ChevronRight size={16} color="#888" />
           )}
-          <strong>{execution.agent_name}</strong>
+          <strong>{execution.display_name || execution.agent_name}</strong>
           <span style={{
             color: borderColor,
             fontSize: '0.85rem',

@@ -73,10 +73,12 @@ export interface AgentExecution {
   id: number;
   workflow_id: string;
   agent_name: string;
+  display_name?: string;  // Human-friendly name for UI display (e.g., "Review Agent 1 (Claude)")
   agent_type: string;
   input_content: string;
   output_content?: string;
   status: string;
+  approval_status?: string;  // "approved" | "has_feedback" | "unclear"
   started_at: string;
   completed_at?: string;
   execution_time_ms?: number;

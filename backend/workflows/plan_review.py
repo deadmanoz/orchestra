@@ -57,10 +57,18 @@ class PlanReviewWorkflow:
         workflow_id: str,
         agent_name: str,
         agent_type: str,
-        input_content: str
+        input_content: str,
+        display_name: str = None
     ) -> int:
         """
         Create an agent execution record in the database.
+
+        Args:
+            workflow_id: The workflow ID
+            agent_name: Internal agent name (e.g., "claude_reviewer")
+            agent_type: Agent type (e.g., "planning", "review", "summary")
+            input_content: The input prompt sent to the agent
+            display_name: Human-friendly name for UI display (e.g., "Review Agent 1 (Claude)")
 
         Returns:
             The execution ID
@@ -69,13 +77,14 @@ class PlanReviewWorkflow:
             cursor = await conn.execute(
                 """
                 INSERT INTO agent_executions (
-                    workflow_id, agent_name, agent_type, input_content,
+                    workflow_id, agent_name, display_name, agent_type, input_content,
                     status, started_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     workflow_id,
                     agent_name,
+                    display_name or agent_name,  # Default to agent_name if no display_name
                     agent_type,
                     input_content,
                     "running",
@@ -236,7 +245,12 @@ class PlanReviewWorkflow:
         logger.info(f"[PlanningAgent] Starting iteration {iteration}")
 
         # Get planning agent
-        planning_agent = await self.agent_factory.get_agent("planning", "claude_planner", workspace_path=self.workspace_path)
+        planning_agent = await self.agent_factory.get_agent(
+            "planning",
+            "claude_planner",
+            workspace_path=self.workspace_path,
+            display_name="Planning (Claude)"
+        )
 
         # Store original timeout to restore after execution
         original_timeout = planning_agent.timeout
@@ -272,7 +286,8 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=planning_agent.name,
             agent_type="planning",
-            input_content=prompt  # Store full prompt
+            input_content=prompt,  # Store full prompt
+            display_name=planning_agent.display_name
         )
 
         # Execute agent with timing
@@ -552,7 +567,8 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=summary_agent.name,
             agent_type="summary",
-            input_content=prompt
+            input_content=prompt,
+            display_name=summary_agent.display_name
         )
 
         # Execute agent with timing
@@ -664,7 +680,8 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=agent.name,
             agent_type="review",
-            input_content=prompt  # Store full prompt
+            input_content=prompt,  # Store full prompt
+            display_name=agent.display_name
         )
 
         # Execute with timing
@@ -746,7 +763,8 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=agent.name,
             agent_type="review",
-            input_content=prompt  # Store full prompt
+            input_content=prompt,  # Store full prompt
+            display_name=agent.display_name
         )
 
         # Execute with timing

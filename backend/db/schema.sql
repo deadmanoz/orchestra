@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id TEXT NOT NULL,
     agent_name TEXT NOT NULL,
+    display_name TEXT,  -- Human-friendly name for UI display (e.g., "Review Agent 1 (Claude)")
     agent_type TEXT NOT NULL,
     input_content TEXT NOT NULL,
     output_content TEXT,

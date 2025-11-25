@@ -17,7 +17,13 @@ class AgentFactory:
         self._agents: dict[str, AgentInterface] = {}
         self._use_mocks = settings.use_mock_agents
 
-    async def get_agent(self, role: str, name: str, workspace_path: Optional[str] = None) -> AgentInterface:
+    async def get_agent(
+        self,
+        role: str,
+        name: str,
+        workspace_path: Optional[str] = None,
+        display_name: str = None
+    ) -> AgentInterface:
         """Get or create an agent"""
         agent_key = f"{role}_{name}"
 
@@ -30,9 +36,10 @@ class AgentFactory:
         # Create new agent
         if self._use_mocks:
             agent = MockAgent(name=name, agent_type="mock", role=role, workspace_path=workspace_path)
+            agent.display_name = display_name or name
         else:
             # Create real CLI agents based on agent name
-            agent = self._create_cli_agent(name, role, workspace_path, timeout)
+            agent = self._create_cli_agent(name, role, workspace_path, timeout, display_name)
 
         await agent.start()
         self._agents[agent_key] = agent
@@ -50,23 +57,34 @@ class AgentFactory:
         else:
             return settings.agent_timeout
 
-    def _create_cli_agent(self, name: str, role: str, workspace_path: Optional[str], timeout: int) -> AgentInterface:
+    def _create_cli_agent(
+        self,
+        name: str,
+        role: str,
+        workspace_path: Optional[str],
+        timeout: int,
+        display_name: str = None
+    ) -> AgentInterface:
         """
         Create a CLI agent based on the agent name.
 
         Args:
             name: Agent name (e.g., "claude_planner", "codex_reviewer")
-            role: Agent role (e.g., "planning", "review")
+            role: Agent role (e.g., "planning", "review", "summary")
             workspace_path: Path to the workspace
             timeout: Timeout in seconds for this agent
+            display_name: Human-friendly name for UI display
 
         Returns:
             CLI agent instance
         """
+        # Roles that should not execute code
+        restricted_roles = ("planning", "review", "summary")
+
         # Determine agent type from name prefix
         if name.startswith("claude"):
-            # Enable plan mode for planning role to prevent accidental code execution
-            plan_mode = (role == "planning")
+            # Enable plan mode for restricted roles to prevent accidental code execution
+            plan_mode = (role in restricted_roles)
             if plan_mode:
                 logger.info(f"[Factory] Creating Claude agent '{name}' with plan mode enabled")
             return ClaudeAgent(
@@ -74,21 +92,34 @@ class AgentFactory:
                 role=role,
                 workspace_path=workspace_path,
                 timeout=timeout,
-                plan_mode=plan_mode
+                plan_mode=plan_mode,
+                display_name=display_name
             )
         elif name.startswith("codex"):
+            # Enable suggest mode for review role (no auto-edits)
+            suggest_mode = (role in restricted_roles)
+            if suggest_mode:
+                logger.info(f"[Factory] Creating Codex agent '{name}' with suggest mode enabled")
             return CodexAgent(
                 name=name,
                 role=role,
                 workspace_path=workspace_path,
-                timeout=timeout
+                timeout=timeout,
+                suggest_mode=suggest_mode,
+                display_name=display_name
             )
         elif name.startswith("gemini"):
+            # Disable yolo mode for review role (no auto-approve)
+            yolo_mode = (role not in restricted_roles)
+            if not yolo_mode:
+                logger.info(f"[Factory] Creating Gemini agent '{name}' with yolo mode disabled")
             return GeminiAgent(
                 name=name,
                 role=role,
                 workspace_path=workspace_path,
-                timeout=timeout
+                timeout=timeout,
+                yolo_mode=yolo_mode,
+                display_name=display_name
             )
         else:
             # Fallback to mock for unknown agent types
@@ -101,17 +132,18 @@ class AgentFactory:
             )
 
     async def get_review_agents(self, workspace_path: Optional[str] = None) -> List[AgentInterface]:
-        """Get all review agents"""
+        """Get all review agents with friendly display names"""
         # All reviewers now use file-based stdout transport (handles 10KB+ responses)
+        # Format: (role, name, display_name)
         review_agent_configs = [
-            ("review", "claude_reviewer"),  # Claude Code CLI
-            ("review", "codex_reviewer"),   # Codex CLI
-            ("review", "gemini_reviewer")   # Gemini CLI
+            ("review", "claude_reviewer", "Review Agent 1 (Claude)"),
+            ("review", "codex_reviewer", "Review Agent 2 (Codex)"),
+            ("review", "gemini_reviewer", "Review Agent 3 (Gemini)")
         ]
 
         agents = []
-        for role, name in review_agent_configs:
-            agent = await self.get_agent(role, name, workspace_path=workspace_path)
+        for role, name, display_name in review_agent_configs:
+            agent = await self.get_agent(role, name, workspace_path=workspace_path, display_name=display_name)
             agents.append(agent)
 
         return agents
@@ -119,7 +151,12 @@ class AgentFactory:
     async def get_summary_agent(self, workspace_path: Optional[str] = None) -> AgentInterface:
         """Get the summary agent for consolidating review feedback"""
         # Use Claude for summary as it excels at synthesis tasks
-        return await self.get_agent("summary", "claude_summary", workspace_path=workspace_path)
+        return await self.get_agent(
+            "summary",
+            "claude_summary",
+            workspace_path=workspace_path,
+            display_name="Review Summary (Claude)"
+        )
 
     async def stop_all(self):
         """Stop all agents"""
