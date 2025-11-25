@@ -196,6 +196,7 @@ class PlanReviewWorkflow:
     async def _planning_agent_node(self, state: PlanReviewState) -> dict:
         """Node for planning agent execution"""
         from backend.agents.cli_agent import CLIAgentError
+        from backend.api.plans import save_plan_to_file
 
         iteration = state.get('iteration_count', 0)
         workflow_id = state.get('workflow_id')
@@ -255,6 +256,19 @@ class PlanReviewWorkflow:
                 execution_time_ms=execution_time_ms,
                 status="completed"
             )
+
+            # Auto-save plan to file if workspace_path is set
+            if self.workspace_path:
+                try:
+                    saved_path = save_plan_to_file(
+                        workspace_path=self.workspace_path,
+                        content=plan,
+                        subdirectory=f"iteration-{iteration}"
+                    )
+                    logger.info(f"[PlanningAgent] Auto-saved plan to {saved_path}")
+                except Exception as e:
+                    logger.warning(f"[PlanningAgent] Failed to auto-save plan: {e}")
+                    # Don't fail the workflow if auto-save fails
 
             # Clear retry flags if successful
             return {

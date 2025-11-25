@@ -20,6 +20,12 @@ Include:
 - Potential challenges
 
 Your plan will be reviewed by multiple REVIEW AGENTS before implementation.
+
+IMPORTANT:
+- Present your plan in markdown format directly in your response
+- Do NOT attempt to save files or use /save-plan command
+- Your output will be automatically saved to the workspace
+- Focus on creating the best possible plan
 """
 
     @staticmethod
@@ -70,6 +76,9 @@ IMPORTANT:
 - Address all feedback from review agents
 - Build on previous iterations rather than starting from scratch
 - Remember user preferences expressed in earlier messages
+- Present your plan in markdown format directly in your response
+- Do NOT attempt to save files or use /save-plan command
+- Your output will be automatically saved to the workspace
 
 Provide your revised plan now.
 """
