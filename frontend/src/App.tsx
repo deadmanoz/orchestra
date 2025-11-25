@@ -92,6 +92,7 @@ function App() {
                   <CheckpointEditor
                     workflowId={currentWorkflowId}
                     checkpoint={workflowData.pending_checkpoint}
+                    agentExecutions={workflowData.agent_executions}
                   />
                 </ErrorBoundary>
               )}

@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Check, X, Edit3, CheckCircle, MessageSquare } from 'lucide-react';
-import type { Checkpoint } from '../types';
+import type { Checkpoint, AgentExecution } from '../types';
 import { useResumeWorkflow } from '../hooks/useResumeWorkflow';
 import { CheckpointStep, CheckpointAction } from '../constants/workflowStatus';
 
 interface Props {
   workflowId: string;
   checkpoint: Checkpoint;
+  agentExecutions?: AgentExecution[];  // Database records with approval_status from summary agent
 }
 
 // Format action names for display (remove underscores, capitalize)
@@ -34,65 +35,25 @@ function formatActionName(action: string): string {
     .join(' ');
 }
 
-// Analyze review content to determine approval status
-function analyzeReviewApproval(reviewContent: string): 'approved' | 'has_feedback' | 'unclear' {
-  const contentLower = reviewContent.toLowerCase();
+// Get approval status from database records (set by summary agent)
+function getApprovalStatusFromExecutions(
+  agentName: string,
+  agentExecutions?: AgentExecution[]
+): 'approved' | 'has_feedback' | 'unclear' | null {
+  if (!agentExecutions) return null;
 
-  // Strong approval signals
-  const approvalPatterns = [
-    /\bapproved?\b/,
-    /\blooks?\s+good\b/,
-    /\bready\s+to\s+(proceed|implement|continue)\b/,
-    /\bno\s+(concerns?|issues?|problems?)\b/,
-    /\bexcellent\s+plan\b/,
-    /\bwell[-\s]structured\b/,
-    /\bcomprehensive\s+plan\b/,
-    /\bno\s+major\s+(concerns?|issues?)\b/,
-    /\ball\s+good\b/,
-    /\bproceed\s+with\s+implementation\b/,
-  ];
+  // Find matching execution by agent_name
+  const execution = agentExecutions.find(e =>
+    e.agent_name === agentName ||
+    e.agent_name?.includes(agentName) ||
+    agentName?.includes(e.agent_name)
+  );
 
-  // Strong concern/feedback signals
-  const concernPatterns = [
-    /\b(critical|major|serious)\s+(issue|concern|problem)\b/,
-    /\bmust\s+(address|fix|change|add|update)\b/,
-    /\brequired?\s+(change|update|fix)\b/,
-    /\bmissing\s+(critical|important|essential)\b/,
-    /\bshould\s+(add|include|consider|address)\b.*\bbefore\s+implementation\b/,
-    /\bsignificant\s+(concern|issue|problem)\b/,
-    /\bnot\s+ready\b/,
-    /\bneeds?\s+(revision|more\s+work|improvement)\b/,
-    /\breject\b/,
-  ];
-
-  // Count matches
-  const approvalScore = approvalPatterns.filter(pattern => pattern.test(contentLower)).length;
-  const concernScore = concernPatterns.filter(pattern => pattern.test(contentLower)).length;
-
-  // Decision logic
-  if (approvalScore > 0 && concernScore === 0) {
-    return 'approved';
+  if (execution?.approval_status) {
+    return execution.approval_status as 'approved' | 'has_feedback' | 'unclear';
   }
 
-  if (concernScore > 0) {
-    return 'has_feedback';
-  }
-
-  // Check for "should" statements (suggestions that may or may not be blockers)
-  const shouldCount = (contentLower.match(/\bshould\b/g) || []).length;
-
-  // If has many "should" statements, classify as has_feedback
-  if (shouldCount >= 3) {
-    return 'has_feedback';
-  }
-
-  // If has some approval signals but also minor suggestions
-  if (approvalScore > 0) {
-    return 'approved';
-  }
-
-  // Default: unclear (probably has some feedback if it's a real review)
-  return contentLower.length > 200 ? 'has_feedback' : 'unclear';
+  return null;
 }
 
 // Get content labels based on checkpoint step
@@ -121,7 +82,7 @@ function getContentLabels(stepName: string, isEditing: boolean): { title: string
   }
 }
 
-export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
+export default function CheckpointEditor({ workflowId, checkpoint, agentExecutions }: Props) {
   const [editedContent, setEditedContent] = useState(checkpoint.editable_content || '');
   const [userNotes, setUserNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -183,21 +144,19 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
       {/* Agent Outputs - Only show reviewers, not the planner (plan is in editable content below) */}
       {checkpoint.agent_outputs && checkpoint.agent_outputs.length > 0 && (
         (() => {
-          // Filter to only show review agents (role="review"), not the planner
-          // This avoids duplication since the plan is shown in "Content to Review" section
+          // Filter to only show review agents (agent_type="review")
+          // Excludes: planning agent (plan shown below), summary agent (not a reviewer)
           const reviewOutputs = checkpoint.agent_outputs.filter(
-            output => output.agent_type === 'review' ||
-                     output.agent_name?.includes('reviewer') ||
-                     output.agent_name?.includes('review')
+            output => output.agent_type === 'review'
           );
 
           if (reviewOutputs.length === 0) {
             return null;
           }
 
-          // Calculate approval summary
+          // Get approval status from database (set by summary agent), not heuristics
           const approvalStatuses = reviewOutputs.map(output =>
-            analyzeReviewApproval(output.output || '')
+            getApprovalStatusFromExecutions(output.agent_name, agentExecutions)
           );
           const approvedCount = approvalStatuses.filter(status => status === 'approved').length;
           const feedbackCount = approvalStatuses.filter(status => status === 'has_feedback').length;
@@ -236,7 +195,8 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {reviewOutputs.map((output, idx) => {
-                  const approvalStatus = analyzeReviewApproval(output.output || '');
+                  // Get approval status from database (set by summary agent)
+                  const approvalStatus = getApprovalStatusFromExecutions(output.agent_name, agentExecutions);
 
                   return (
                     <div
