@@ -253,13 +253,20 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
+  // Different styling based on agent type
+  const isPlanningAgent = execution.agent_type === 'planning';
+  const borderColor = isPlanningAgent ? '#4c6ef5' : '#51cf66';
+  const backgroundColor = isPlanningAgent ? 'rgba(76, 110, 245, 0.05)' : 'rgba(81, 207, 102, 0.05)';
+  const agentTypeLabel = isPlanningAgent ? '📋 Planning' : '🔍 Review';
+
   return (
     <div
       style={{
         padding: '1rem',
-        border: '1px solid #333',
+        border: `1px solid ${borderColor}`,
+        borderLeft: `4px solid ${borderColor}`,
         borderRadius: '4px',
-        backgroundColor: '#0a0a0a'
+        backgroundColor: backgroundColor
       }}
     >
       <div
@@ -276,8 +283,14 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
             isExpanded ? <ChevronDown size={16} color="#888" /> : <ChevronRight size={16} color="#888" />
           )}
           <strong>{execution.agent_name}</strong>
-          <span style={{ color: '#888' }}>
-            ({execution.agent_type})
+          <span style={{
+            color: borderColor,
+            fontSize: '0.85rem',
+            backgroundColor: 'rgba(0,0,0,0.3)',
+            padding: '0.2rem 0.5rem',
+            borderRadius: '3px'
+          }}>
+            {agentTypeLabel}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -295,14 +308,31 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
         <div style={{
           marginTop: '1rem',
           paddingTop: '1rem',
-          borderTop: '1px solid #333',
-          fontSize: '0.9rem',
-          color: '#ccc',
-          whiteSpace: 'pre-wrap',
-          maxHeight: '400px',
-          overflow: 'auto'
+          borderTop: `1px solid ${borderColor}`,
+          position: 'relative'
         }}>
-          {execution.output_content}
+          <div style={{
+            fontSize: '0.9rem',
+            color: '#ccc',
+            whiteSpace: 'pre-wrap',
+            maxHeight: '600px',
+            overflow: 'auto',
+            padding: '1rem',
+            backgroundColor: '#000',
+            borderRadius: '4px',
+            fontFamily: 'monospace',
+            lineHeight: '1.6'
+          }}>
+            {execution.output_content}
+          </div>
+          <div style={{
+            marginTop: '0.5rem',
+            fontSize: '0.8rem',
+            color: '#888',
+            fontStyle: 'italic'
+          }}>
+            💡 Tip: Click and drag to select text, then copy with Ctrl+C (Cmd+C on Mac)
+          </div>
         </div>
       )}
     </div>
