@@ -21,7 +21,7 @@ export default function CreateWorkflowForm({ onWorkflowCreated }: Props) {
       name,
       type,
       initial_prompt: prompt,
-      workspace_path: workspacePath || undefined,
+      workspace_path: workspacePath,
     };
 
     try {
@@ -91,13 +91,14 @@ export default function CreateWorkflowForm({ onWorkflowCreated }: Props) {
 
         <div>
           <label style={{ display: 'block', marginBottom: '0.5rem' }}>
-            Workspace Path (optional)
+            Workspace Path
           </label>
           <input
             type="text"
             value={workspacePath}
             onChange={(e) => setWorkspacePath(e.target.value)}
-            placeholder="/path/to/your/codebase or leave empty for current directory"
+            placeholder="/path/to/your/codebase"
+            required
             style={{
               width: '100%',
               padding: '0.5rem',
@@ -109,7 +110,7 @@ export default function CreateWorkflowForm({ onWorkflowCreated }: Props) {
             }}
           />
           <small style={{ display: 'block', marginTop: '0.25rem', color: '#888', fontSize: '0.85rem' }}>
-            Absolute path to the directory where agents will work
+            Required: Absolute path to the directory where agents will work
           </small>
         </div>
 
