@@ -323,6 +323,14 @@ async def get_workflow(workflow_id: str):
         rows = await cursor.fetchall()
         agent_executions = [dict(row) for row in rows]
 
+    # Add approval status to review agents
+    from backend.services.review_analyzer import analyze_review_approval
+    for execution in agent_executions:
+        if execution.get('agent_type') == 'review' and execution.get('output_content'):
+            execution['approval_status'] = analyze_review_approval(execution['output_content'])
+        else:
+            execution['approval_status'] = None
+
     return WorkflowStateSnapshot(
         workflow=WorkflowResponse(**workflow_dict),
         pending_checkpoint=pending_checkpoint,

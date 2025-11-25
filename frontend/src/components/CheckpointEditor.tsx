@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Check, X, Edit3 } from 'lucide-react';
+import { Check, X, Edit3, CheckCircle, MessageSquare } from 'lucide-react';
 import type { Checkpoint } from '../types';
 import { useResumeWorkflow } from '../hooks/useResumeWorkflow';
 import { CheckpointStep, CheckpointAction } from '../constants/workflowStatus';
@@ -32,6 +32,67 @@ function formatActionName(action: string): string {
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+// Analyze review content to determine approval status
+function analyzeReviewApproval(reviewContent: string): 'approved' | 'has_feedback' | 'unclear' {
+  const contentLower = reviewContent.toLowerCase();
+
+  // Strong approval signals
+  const approvalPatterns = [
+    /\bapproved?\b/,
+    /\blooks?\s+good\b/,
+    /\bready\s+to\s+(proceed|implement|continue)\b/,
+    /\bno\s+(concerns?|issues?|problems?)\b/,
+    /\bexcellent\s+plan\b/,
+    /\bwell[-\s]structured\b/,
+    /\bcomprehensive\s+plan\b/,
+    /\bno\s+major\s+(concerns?|issues?)\b/,
+    /\ball\s+good\b/,
+    /\bproceed\s+with\s+implementation\b/,
+  ];
+
+  // Strong concern/feedback signals
+  const concernPatterns = [
+    /\b(critical|major|serious)\s+(issue|concern|problem)\b/,
+    /\bmust\s+(address|fix|change|add|update)\b/,
+    /\brequired?\s+(change|update|fix)\b/,
+    /\bmissing\s+(critical|important|essential)\b/,
+    /\bshould\s+(add|include|consider|address)\b.*\bbefore\s+implementation\b/,
+    /\bsignificant\s+(concern|issue|problem)\b/,
+    /\bnot\s+ready\b/,
+    /\bneeds?\s+(revision|more\s+work|improvement)\b/,
+    /\breject\b/,
+  ];
+
+  // Count matches
+  const approvalScore = approvalPatterns.filter(pattern => pattern.test(contentLower)).length;
+  const concernScore = concernPatterns.filter(pattern => pattern.test(contentLower)).length;
+
+  // Decision logic
+  if (approvalScore > 0 && concernScore === 0) {
+    return 'approved';
+  }
+
+  if (concernScore > 0) {
+    return 'has_feedback';
+  }
+
+  // Check for "should" statements (suggestions that may or may not be blockers)
+  const shouldCount = (contentLower.match(/\bshould\b/g) || []).length;
+
+  // If has many "should" statements, classify as has_feedback
+  if (shouldCount >= 3) {
+    return 'has_feedback';
+  }
+
+  // If has some approval signals but also minor suggestions
+  if (approvalScore > 0) {
+    return 'approved';
+  }
+
+  // Default: unclear (probably has some feedback if it's a real review)
+  return contentLower.length > 200 ? 'has_feedback' : 'unclear';
 }
 
 // Get content labels based on checkpoint step
@@ -134,49 +195,121 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
             return null;
           }
 
+          // Calculate approval summary
+          const approvalStatuses = reviewOutputs.map(output =>
+            analyzeReviewApproval(output.output || '')
+          );
+          const approvedCount = approvalStatuses.filter(status => status === 'approved').length;
+          const feedbackCount = approvalStatuses.filter(status => status === 'has_feedback').length;
+
           return (
             <div style={{ marginBottom: '1rem' }}>
-              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem' }}>
-                Reviews ({reviewOutputs.length})
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {reviewOutputs.map((output, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      padding: '1rem',
-                      backgroundColor: '#0a0a0a',
-                      borderRadius: '4px',
-                      border: '1px solid #333'
-                    }}
-                  >
-                    <div style={{
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <h4 style={{ margin: 0, fontSize: '1rem' }}>
+                  Reviews ({reviewOutputs.length})
+                </h4>
+                {/* Approval Summary */}
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.85rem' }}>
+                  {approvedCount > 0 && (
+                    <span style={{
                       display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: '0.75rem',
-                      fontSize: '0.9rem',
-                      paddingBottom: '0.5rem',
-                      borderBottom: '1px solid #222'
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      color: '#51cf66'
                     }}>
-                      <span style={{ fontWeight: 600, color: '#51cf66' }}>
-                        {output.agent_name}
-                      </span>
-                      {output.execution_time && (
-                        <span style={{ color: '#888' }}>
-                          {(output.execution_time / 1000).toFixed(1)}s
-                        </span>
-                      )}
-                    </div>
-                    <div style={{
-                      fontSize: '0.95rem',
-                      lineHeight: '1.6',
-                      maxHeight: '400px',
-                      overflow: 'auto'
+                      <CheckCircle size={14} />
+                      {approvedCount} Approved
+                    </span>
+                  )}
+                  {feedbackCount > 0 && (
+                    <span style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      color: '#ffd43b'
                     }}>
-                      <ReactMarkdown>{output.output}</ReactMarkdown>
+                      <MessageSquare size={14} />
+                      {feedbackCount} Has Feedback
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {reviewOutputs.map((output, idx) => {
+                  const approvalStatus = analyzeReviewApproval(output.output || '');
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '1rem',
+                        backgroundColor: '#0a0a0a',
+                        borderRadius: '4px',
+                        border: '1px solid #333'
+                      }}
+                    >
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '0.75rem',
+                        fontSize: '0.9rem',
+                        paddingBottom: '0.5rem',
+                        borderBottom: '1px solid #222'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 600, color: '#51cf66' }}>
+                            {output.agent_name}
+                          </span>
+                          {/* Approval Badge */}
+                          {approvalStatus === 'approved' && (
+                            <span style={{
+                              fontSize: '0.85rem',
+                              backgroundColor: 'rgba(81, 207, 102, 0.2)',
+                              color: '#51cf66',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '3px',
+                              border: '1px solid #51cf66',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.3rem'
+                            }}>
+                              ✓ Approved
+                            </span>
+                          )}
+                          {approvalStatus === 'has_feedback' && (
+                            <span style={{
+                              fontSize: '0.85rem',
+                              backgroundColor: 'rgba(255, 212, 59, 0.2)',
+                              color: '#ffd43b',
+                              padding: '0.2rem 0.5rem',
+                              borderRadius: '3px',
+                              border: '1px solid #ffd43b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.3rem'
+                            }}>
+                              📝 Has Feedback
+                            </span>
+                          )}
+                        </div>
+                        {output.execution_time && (
+                          <span style={{ color: '#888' }}>
+                            {(output.execution_time / 1000).toFixed(1)}s
+                          </span>
+                        )}
+                      </div>
+                      <div style={{
+                        fontSize: '0.95rem',
+                        lineHeight: '1.6',
+                        maxHeight: '400px',
+                        overflow: 'auto'
+                      }}>
+                        <ReactMarkdown>{output.output}</ReactMarkdown>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );

@@ -272,6 +272,40 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
   const backgroundColor = isPlanningAgent ? 'rgba(76, 110, 245, 0.05)' : 'rgba(81, 207, 102, 0.05)';
   const agentTypeLabel = isPlanningAgent ? '📋 Planning' : '🔍 Review';
 
+  // Approval status indicator for review agents
+  const getApprovalBadge = () => {
+    if (!execution.approval_status || isPlanningAgent) return null;
+
+    if (execution.approval_status === 'approved') {
+      return (
+        <span style={{
+          fontSize: '0.85rem',
+          backgroundColor: 'rgba(81, 207, 102, 0.2)',
+          color: '#51cf66',
+          padding: '0.2rem 0.5rem',
+          borderRadius: '3px',
+          border: '1px solid #51cf66'
+        }}>
+          ✓ Approved
+        </span>
+      );
+    } else if (execution.approval_status === 'has_feedback') {
+      return (
+        <span style={{
+          fontSize: '0.85rem',
+          backgroundColor: 'rgba(255, 212, 59, 0.2)',
+          color: '#ffd43b',
+          padding: '0.2rem 0.5rem',
+          borderRadius: '3px',
+          border: '1px solid #ffd43b'
+        }}>
+          📝 Has Feedback
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <div
       style={{
@@ -305,6 +339,7 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
           }}>
             {agentTypeLabel}
           </span>
+          {getApprovalBadge()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {getStatusIcon(execution.status)}
