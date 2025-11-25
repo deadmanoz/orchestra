@@ -48,10 +48,12 @@ class AgentExecutionResponse(BaseModel):
     id: int
     workflow_id: str
     agent_name: str
+    display_name: Optional[str] = None  # Human-friendly name for UI display
     agent_type: str
     input_content: str
     output_content: Optional[str] = None
     status: str
+    approval_status: Optional[str] = None  # "approved" | "has_feedback" | "unclear"
     started_at: datetime
     completed_at: Optional[datetime] = None
     execution_time_ms: Optional[int] = None
