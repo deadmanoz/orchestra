@@ -21,11 +21,20 @@ Include:
 
 Your plan will be reviewed by multiple REVIEW AGENTS before implementation.
 
-IMPORTANT:
-- Present your plan in markdown format directly in your response
-- Do NOT attempt to save files or use /save-plan command
-- Your output will be automatically saved to the workspace
-- Focus on creating the best possible plan
+CRITICAL RESTRICTIONS:
+- You are in READ-ONLY mode for all code and configuration files
+- Do NOT modify, create, edit, or delete ANY files except the plan document
+- Do NOT run any commands that modify the filesystem or codebase
+- Do NOT execute code, run tests, install packages, or make commits
+- ONLY output your plan as markdown text in your response
+- Your plan output will be automatically saved by the system
+
+WHAT YOU CAN DO:
+- Read and analyze existing code to inform your plan
+- Present your plan in markdown format in your response
+- Reference files and code you've read
+
+Focus on creating the best possible plan.
 """
 
     @staticmethod
@@ -71,14 +80,24 @@ IMPORTANT:
 {feedback_section}
 Based on the conversation history above, please revise your plan.
 
-IMPORTANT:
+CRITICAL RESTRICTIONS:
+- You are in READ-ONLY mode for all code and configuration files
+- Do NOT modify, create, edit, or delete ANY files except the plan document
+- Do NOT run any commands that modify the filesystem or codebase
+- Do NOT execute code, run tests, install packages, or make commits
+- ONLY output your plan as markdown text in your response
+- Your plan output will be automatically saved by the system
+
+WHAT YOU CAN DO:
+- Read and analyze existing code to inform your plan
+- Present your plan in markdown format in your response
+- Reference files and code you've read
+
+REVISION GUIDANCE:
 - Reference what was tried before and why it didn't work
 - Address all feedback from review agents
 - Build on previous iterations rather than starting from scratch
 - Remember user preferences expressed in earlier messages
-- Present your plan in markdown format directly in your response
-- Do NOT attempt to save files or use /save-plan command
-- Your output will be automatically saved to the workspace
 
 Provide your revised plan now.
 """
@@ -98,6 +117,13 @@ Provide your revised plan now.
 
 {feedback_text}
 
+CRITICAL RESTRICTIONS:
+- You are in READ-ONLY mode for all code and configuration files
+- Do NOT modify, create, edit, or delete ANY files
+- Do NOT run any commands that modify the filesystem or codebase
+- Do NOT execute code, run tests, install packages, or make commits
+- ONLY output your revised plan as markdown text in your response
+
 Please revise your plan based on the feedback above.
 Address the concerns raised and incorporate the suggestions.
 """
@@ -111,6 +137,19 @@ The PLANNING AGENT has prepared the following plan:
 **** PLAN START ****
 {plan}
 **** PLAN END ****
+
+CRITICAL RESTRICTIONS - READ THIS CAREFULLY:
+- You are in STRICT READ-ONLY mode
+- Do NOT modify, create, edit, or delete ANY files whatsoever
+- Do NOT run ANY commands that modify the filesystem or codebase
+- Do NOT execute code, run tests, install packages, or make commits
+- Do NOT write code implementations or create new files
+- ONLY provide your review feedback as text in your response
+
+WHAT YOU CAN DO:
+- Read existing code to inform your review
+- Provide written feedback and suggestions
+- Analyze the plan and identify issues
 
 Please provide expert review feedback on the plan.
 Focus on:
@@ -170,9 +209,22 @@ The PLANNING AGENT has now revised the plan. Here is the CURRENT VERSION to revi
 {plan}
 **** CURRENT PLAN END ****
 
+CRITICAL RESTRICTIONS - READ THIS CAREFULLY:
+- You are in STRICT READ-ONLY mode
+- Do NOT modify, create, edit, or delete ANY files whatsoever
+- Do NOT run ANY commands that modify the filesystem or codebase
+- Do NOT execute code, run tests, install packages, or make commits
+- Do NOT write code implementations or create new files
+- ONLY provide your review feedback as text in your response
+
+WHAT YOU CAN DO:
+- Read existing code to inform your review
+- Provide written feedback and suggestions
+- Analyze the plan and identify issues
+
 Based on the conversation history above, please provide your expert review feedback.
 
-IMPORTANT:
+REVIEW GUIDANCE:
 - Reference your previous reviews if you gave feedback before
 - Note if your previous concerns were addressed or ignored
 - Acknowledge improvements made since your last review
@@ -209,6 +261,14 @@ Provide direct, unambiguous feedback that will help improve the plan.
         return f"""You are a REVIEW SUMMARY AGENT. Your task is to:
 1. Evaluate each reviewer's verdict on the plan
 2. Provide a brief, actionable summary of the feedback
+
+CRITICAL RESTRICTIONS - READ THIS CAREFULLY:
+- You are in STRICT READ-ONLY mode
+- Do NOT modify, create, edit, or delete ANY files whatsoever
+- Do NOT run ANY commands that modify the filesystem or codebase
+- Do NOT execute code, run tests, install packages, or make commits
+- Do NOT write code implementations or create new files
+- ONLY provide your summary as text in your response
 
 The following review agents have analyzed a development plan:
 
