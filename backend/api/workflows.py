@@ -265,6 +265,7 @@ async def get_workflow(workflow_id: str):
 
     # Get LangGraph checkpoint data
     pending_checkpoint = None
+    current_iteration = 0
     if workflow_id in active_workflows:
         workflow_data = active_workflows[workflow_id]
         compiled_workflow = workflow_data["compiled"]
@@ -275,6 +276,11 @@ async def get_workflow(workflow_id: str):
             # Use async method since we're using AsyncSqliteSaver
             state = await compiled_workflow.aget_state(config)
             logger.debug(f"[API] State for {workflow_id}: has interrupts={bool(state.interrupts if state else False)}")
+
+            # Extract current iteration from state values (available even when agents are running)
+            if state and hasattr(state, 'values') and state.values:
+                current_iteration = state.values.get("iteration_count", 0)
+                logger.debug(f"[API] Current iteration for {workflow_id}: {current_iteration}")
 
             # LangGraph stores interrupt data in state.interrupts (tuple of Interrupt objects)
             # NOT in state.values['__interrupt__']
@@ -335,7 +341,8 @@ async def get_workflow(workflow_id: str):
         workflow=WorkflowResponse(**workflow_dict),
         pending_checkpoint=pending_checkpoint,
         recent_messages=[],
-        agent_executions=agent_executions
+        agent_executions=agent_executions,
+        current_iteration=current_iteration
     )
 
 @router.post("/{workflow_id}/resume")

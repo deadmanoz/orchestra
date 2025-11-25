@@ -64,3 +64,4 @@ class WorkflowStateSnapshot(BaseModel):
     pending_checkpoint: Optional[dict] = None
     recent_messages: list[MessageResponse] = []
     agent_executions: list[AgentExecutionResponse] = []
+    current_iteration: int = 0  # Current iteration count from workflow state

@@ -57,6 +57,7 @@ export interface WorkflowStateSnapshot {
   pending_checkpoint: Checkpoint | null;
   recent_messages: Message[];
   agent_executions: AgentExecution[];
+  current_iteration: number;  // Current iteration from workflow state
 }
 
 export interface Message {

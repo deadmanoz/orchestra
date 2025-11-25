@@ -9,6 +9,7 @@ interface Props {
   messages: Message[];
   executions: AgentExecution[];
   pendingCheckpoint: Checkpoint | null;
+  currentIteration: number;
   onReset: () => void;
 }
 
@@ -48,7 +49,8 @@ function formatDuration(ms?: number): string {
 function getWorkflowStatusMessage(
   workflow: Workflow,
   pendingCheckpoint: Checkpoint | null,
-  executions: AgentExecution[]
+  executions: AgentExecution[],
+  currentIteration: number
 ): { message: string; showSpinner: boolean } {
   if (workflow.status === WorkflowStatus.COMPLETED) {
     return { message: 'Workflow completed successfully', showSpinner: false };
@@ -89,17 +91,15 @@ function getWorkflowStatusMessage(
 
     // If we have running agents, show status based on agent type
     if (agentTypes.includes('planning')) {
-      const iteration = pendingCheckpoint?.iteration ?? 0;
-      if (iteration === 0) {
+      if (currentIteration === 0) {
         return { message: 'Planning agent crafting initial plan...', showSpinner: true };
       } else {
-        return { message: `Planning agent revising plan (iteration ${iteration + 1})...`, showSpinner: true };
+        return { message: `Planning agent revising plan (iteration ${currentIteration + 1})...`, showSpinner: true };
       }
     }
 
     if (agentTypes.includes('review')) {
-      const iteration = pendingCheckpoint?.iteration ?? 0;
-      const planVersion = iteration + 1;
+      const planVersion = currentIteration + 1;
 
       // Get all review agent executions (running or completed in this batch)
       const reviewAgents = executions.filter(e => e.agent_type === 'review');
@@ -151,8 +151,7 @@ function getWorkflowStatusMessage(
 
     // If last execution was planning, reviewers should be next
     if (lastExecution.agent_type === 'planning' && lastExecution.status === 'completed') {
-      const iteration = pendingCheckpoint?.iteration ?? 0;
-      const planVersion = iteration + 1;
+      const planVersion = currentIteration + 1;
 
       // Check if there are any review agents that have started
       const reviewAgents = executions.filter(e => e.agent_type === 'review');
@@ -185,8 +184,7 @@ function getWorkflowStatusMessage(
     // If last executions were reviews, planning agent should be next (revision)
     const recentReviews = sortedExecutions.filter(e => e.agent_type === 'review' && e.status === 'completed');
     if (recentReviews.length > 0) {
-      const iteration = (pendingCheckpoint?.iteration ?? 0) + 1;
-      return { message: `Planning agent revising plan (iteration ${iteration + 1})...`, showSpinner: true };
+      return { message: `Planning agent revising plan (iteration ${currentIteration + 2})...`, showSpinner: true };
     }
 
     // Default fallback
@@ -426,7 +424,7 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
   );
 }
 
-export default function WorkflowDashboard({ workflow, messages, executions, pendingCheckpoint, onReset }: Props) {
+export default function WorkflowDashboard({ workflow, messages, executions, pendingCheckpoint, currentIteration, onReset }: Props) {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case WorkflowStatus.COMPLETED:
@@ -453,7 +451,7 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
   };
 
   // Get descriptive status message
-  const statusInfo = getWorkflowStatusMessage(workflow, pendingCheckpoint, executions);
+  const statusInfo = getWorkflowStatusMessage(workflow, pendingCheckpoint, executions, currentIteration);
 
   // Find the most recent running agent to show timer for
   const runningAgents = executions.filter(e => e.status === 'running');
@@ -508,7 +506,7 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
             {/* Iteration Breadcrumb Trail */}
             <IterationBreadcrumb
               workflowId={workflow.id}
-              currentIteration={pendingCheckpoint?.iteration}
+              currentIteration={currentIteration}
             />
 
             {workflow.workspace_path && (
