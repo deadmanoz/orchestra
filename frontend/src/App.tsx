@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import WorkflowDashboard from './components/WorkflowDashboard';
 import WorkflowTimeline from './components/WorkflowTimeline';
 import CreateWorkflowForm from './components/CreateWorkflowForm';
@@ -7,12 +7,47 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useWorkflow } from './hooks/useWorkflow';
 import { useWebSocket } from './hooks/useWebSocket';
 
+// Get workflow ID from URL hash (e.g., #workflow/wf-abc123)
+function getWorkflowIdFromUrl(): string | null {
+  const hash = window.location.hash;
+  if (hash.startsWith('#workflow/')) {
+    return hash.slice('#workflow/'.length);
+  }
+  return null;
+}
+
+// Update URL hash with workflow ID
+function setWorkflowIdInUrl(workflowId: string | null) {
+  if (workflowId) {
+    window.location.hash = `workflow/${workflowId}`;
+  } else {
+    // Clear hash without triggering hashchange
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
 function App() {
-  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
+  // Initialize from URL hash
+  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(getWorkflowIdFromUrl);
   const { data: workflowData, isLoading, error } = useWorkflow(currentWorkflowId);
 
   // Enable WebSocket for real-time updates
   useWebSocket(currentWorkflowId);
+
+  // Sync URL hash with workflow ID
+  useEffect(() => {
+    setWorkflowIdInUrl(currentWorkflowId);
+  }, [currentWorkflowId]);
+
+  // Listen for hash changes (browser back/forward)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const id = getWorkflowIdFromUrl();
+      setCurrentWorkflowId(id);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   return (
     <div style={{
