@@ -24,19 +24,31 @@ class AgentFactory:
         if agent_key in self._agents:
             return self._agents[agent_key]
 
+        # Determine timeout based on role
+        timeout = self._get_timeout_for_role(role)
+
         # Create new agent
         if self._use_mocks:
             agent = MockAgent(name=name, agent_type="mock", role=role, workspace_path=workspace_path)
         else:
             # Create real CLI agents based on agent name
-            agent = self._create_cli_agent(name, role, workspace_path)
+            agent = self._create_cli_agent(name, role, workspace_path, timeout)
 
         await agent.start()
         self._agents[agent_key] = agent
 
         return agent
 
-    def _create_cli_agent(self, name: str, role: str, workspace_path: Optional[str]) -> AgentInterface:
+    def _get_timeout_for_role(self, role: str) -> int:
+        """Get timeout based on agent role"""
+        if role == "planning":
+            return settings.planning_agent_timeout
+        elif role == "review":
+            return settings.review_agent_timeout
+        else:
+            return settings.agent_timeout
+
+    def _create_cli_agent(self, name: str, role: str, workspace_path: Optional[str], timeout: int) -> AgentInterface:
         """
         Create a CLI agent based on the agent name.
 
@@ -44,6 +56,7 @@ class AgentFactory:
             name: Agent name (e.g., "claude_planner", "codex_reviewer")
             role: Agent role (e.g., "planning", "review")
             workspace_path: Path to the workspace
+            timeout: Timeout in seconds for this agent
 
         Returns:
             CLI agent instance
@@ -53,19 +66,22 @@ class AgentFactory:
             return ClaudeAgent(
                 name=name,
                 role=role,
-                workspace_path=workspace_path
+                workspace_path=workspace_path,
+                timeout=timeout
             )
         elif name.startswith("codex"):
             return CodexAgent(
                 name=name,
                 role=role,
-                workspace_path=workspace_path
+                workspace_path=workspace_path,
+                timeout=timeout
             )
         elif name.startswith("gemini"):
             return GeminiAgent(
                 name=name,
                 role=role,
-                workspace_path=workspace_path
+                workspace_path=workspace_path,
+                timeout=timeout
             )
         else:
             # Fallback to mock for unknown agent types

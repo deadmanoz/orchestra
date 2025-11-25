@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from langgraph.types import interrupt
+from langchain_core.messages import AIMessage
 
 from backend.db.connection import db
 
@@ -337,6 +338,143 @@ class CheckpointManager:
                 "next_step": "end",
                 "messages": [HumanMessage(
                     content="[User cancelled workflow]",
+                    name="user"
+                )]
+            }
+
+    async def create_timeout_checkpoint(
+        self,
+        state: Dict[str, Any],
+        agent_name: str,
+        agent_type: str,
+        timeout_seconds: int,
+        error_message: str,
+        prompt: str
+    ) -> Dict[str, Any]:
+        """
+        Create a checkpoint when an agent times out.
+
+        Args:
+            state: Current workflow state
+            agent_name: Name of the agent that timed out
+            agent_type: Type of agent (planning or review)
+            timeout_seconds: Timeout duration in seconds
+            error_message: Error message from the timeout
+            prompt: The prompt that was sent to the agent
+
+        Returns:
+            State updates based on user action
+        """
+        from langchain_core.messages import HumanMessage
+
+        timeout_info = (
+            f"⚠️ Agent Timeout\n\n"
+            f"Agent: {agent_name}\n"
+            f"Type: {agent_type}\n"
+            f"Timeout: {timeout_seconds}s ({timeout_seconds // 60}m {timeout_seconds % 60}s)\n\n"
+            f"What would you like to do?"
+        )
+
+        human_input = await self.create_checkpoint(
+            workflow_id=state["workflow_id"],
+            checkpoint_number=state["checkpoint_number"],
+            step_name=f"{agent_type}_agent_timeout",
+            editable_content=timeout_info,
+            instructions=timeout_info,
+            actions={
+                "primary": "retry_extended_10m",
+                "secondary": [
+                    "retry_extended_20m",
+                    "provide_manual_input",
+                    "skip_agent" if agent_type == "review" else "cancel",
+                    "cancel"
+                ]
+            },
+            agent_outputs=[{
+                "agent_name": agent_name,
+                "agent_type": agent_type,
+                "output": f"TIMEOUT: {error_message}",
+                "timestamp": datetime.now().isoformat()
+            }],
+            iteration=state.get("iteration_count", 0),
+            context={
+                "timeout_seconds": timeout_seconds,
+                "prompt": prompt,
+                "agent_name": agent_name,
+                "agent_type": agent_type
+            }
+        )
+
+        action = human_input.get("action", "cancel")
+
+        # Store timeout extension if needed
+        timeout_extension = 0
+        if action == "retry_extended_10m":
+            timeout_extension = 600  # 10 minutes
+        elif action == "retry_extended_20m":
+            timeout_extension = 1200  # 20 minutes
+
+        if action in ["retry_extended_10m", "retry_extended_20m"]:
+            return {
+                "status": "retrying_after_timeout",
+                "timeout_extension": timeout_extension,
+                "retry_agent": True,
+                "messages": [HumanMessage(
+                    content=f"[User chose to retry with +{timeout_extension // 60}m extension]",
+                    name="user"
+                )]
+            }
+        elif action == "provide_manual_input":
+            manual_input = human_input.get("edited_content", "")
+            if agent_type == "planning":
+                return {
+                    "current_plan": manual_input,
+                    "status": "plan_created",
+                    "messages": [
+                        HumanMessage(
+                            content=f"[User provided manual plan after timeout]",
+                            name="user"
+                        ),
+                        AIMessage(content=manual_input, name="planning_agent")
+                    ],
+                    "checkpoint_number": state.get("checkpoint_number", 0) + 1
+                }
+            else:  # review
+                return {
+                    "review_feedback": [{
+                        "agent_name": agent_name,
+                        "agent_type": "review",
+                        "agent_identifier": "MANUAL REVIEW",
+                        "feedback": manual_input,
+                        "timestamp": datetime.now().isoformat()
+                    }],
+                    "status": "reviews_collected",
+                    "messages": [
+                        HumanMessage(
+                            content=f"[User provided manual review after timeout]",
+                            name="user"
+                        )
+                    ],
+                    "checkpoint_number": state["checkpoint_number"] + 1
+                }
+        elif action == "skip_agent":
+            # Only available for review agents - continue to next step
+            return {
+                "skip_timed_out_agent": agent_name,
+                "status": "reviews_collected",  # Mark as if reviews completed
+                "next_step": "review_checkpoint",  # Continue to review checkpoint
+                "checkpoint_number": state.get("checkpoint_number", 0) + 1,
+                "messages": [HumanMessage(
+                    content=f"[User chose to skip {agent_name} and continue with other reviews]",
+                    name="user"
+                )]
+            }
+        else:  # cancel
+            return {
+                "status": "cancelled",
+                "next_step": "end",
+                "messages": [HumanMessage(
+                    content=f"[User cancelled workflow after {agent_type} agent timeout]",
                     name="user"
                 )]
             }

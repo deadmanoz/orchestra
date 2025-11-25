@@ -30,6 +30,9 @@ class PlanReviewState(TypedDict):
     next_step: str
     reviewer_prompt: str  # Custom reviewer prompt (if user wants to edit full prompt)
     planner_prompt: str  # Custom planner revision prompt (if user wants to edit full prompt)
+    retry_agent: bool  # Flag to indicate retry after timeout
+    timeout_extension: int  # Seconds to extend timeout for retry
+    skip_timed_out_agent: str  # Agent name to skip if user chose to skip
 
 class PlanReviewWorkflow:
     """Implements the plan-review-iterate workflow with human checkpoints"""
@@ -131,8 +134,21 @@ class PlanReviewWorkflow:
         # Set entry point
         workflow.set_entry_point("planning_agent")
 
-        # Define edges
-        workflow.add_edge("planning_agent", "plan_checkpoint")
+        # Define edges with conditional routing for timeout retries
+        # Planning agent can route to plan_checkpoint OR retry itself on timeout OR end if cancelled
+        workflow.add_conditional_edges(
+            "planning_agent",
+            lambda state: (
+                "planning_agent" if state.get("retry_agent")
+                else state.get("next_step", "plan_checkpoint") if state.get("next_step") == "end"
+                else "plan_checkpoint"
+            ),
+            {
+                "planning_agent": "planning_agent",  # Retry after timeout
+                "plan_checkpoint": "plan_checkpoint",  # Normal flow
+                "end": END  # Cancel
+            }
+        )
 
         # Conditional edge from plan checkpoint based on action
         workflow.add_conditional_edges(
@@ -146,7 +162,21 @@ class PlanReviewWorkflow:
         )
 
         workflow.add_edge("edit_reviewer_prompt_checkpoint", "review_agents")
-        workflow.add_edge("review_agents", "review_checkpoint")
+
+        # Review agents can route to review_checkpoint OR retry itself on timeout OR end if cancelled
+        workflow.add_conditional_edges(
+            "review_agents",
+            lambda state: (
+                "review_agents" if state.get("retry_agent")
+                else state.get("next_step", "review_checkpoint") if state.get("next_step") in ["review_checkpoint", "end"]
+                else "review_checkpoint"
+            ),
+            {
+                "review_agents": "review_agents",  # Retry after timeout
+                "review_checkpoint": "review_checkpoint",  # Normal flow or skip
+                "end": END  # Cancel
+            }
+        )
 
         # Conditional edge from review checkpoint
         workflow.add_conditional_edges(
@@ -165,12 +195,22 @@ class PlanReviewWorkflow:
 
     async def _planning_agent_node(self, state: PlanReviewState) -> dict:
         """Node for planning agent execution"""
+        from backend.agents.cli_agent import CLIAgentError
+
         iteration = state.get('iteration_count', 0)
         workflow_id = state.get('workflow_id')
         logger.info(f"[PlanningAgent] Starting iteration {iteration}")
 
         # Get planning agent
         planning_agent = await self.agent_factory.get_agent("planning", "claude_planner", workspace_path=self.workspace_path)
+
+        # Check if we're retrying after timeout with extension
+        if state.get("retry_agent") and state.get("timeout_extension"):
+            timeout_extension = state.get("timeout_extension", 0)
+            logger.info(f"[PlanningAgent] Retrying with +{timeout_extension}s timeout extension")
+            # Temporarily extend timeout
+            original_timeout = planning_agent.timeout
+            planning_agent.timeout = original_timeout + timeout_extension
 
         # Build prompt - check if user provided custom planner prompt
         if state.get("planner_prompt"):
@@ -213,6 +253,40 @@ class PlanReviewWorkflow:
                 execution_time_ms=execution_time_ms,
                 status="completed"
             )
+
+            # Clear retry flags if successful
+            return {
+                "current_plan": plan,
+                "status": "plan_created",
+                "messages": [AIMessage(content=plan, name="planning_agent")],
+                "checkpoint_number": state.get("checkpoint_number", 0) + 1,
+                "retry_agent": None,  # Clear retry flag
+                "timeout_extension": None  # Clear extension
+            }
+        except CLIAgentError as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+
+            # Check if it's a timeout error
+            if "timed out" in str(e).lower():
+                logger.warning(f"[PlanningAgent] Timeout detected, creating checkpoint for user decision")
+                # Create timeout checkpoint instead of failing
+                return await self.checkpoint_manager.create_timeout_checkpoint(
+                    state=state,
+                    agent_name=planning_agent.name,
+                    agent_type="planning",
+                    timeout_seconds=planning_agent.timeout,
+                    error_message=str(e),
+                    prompt=prompt
+                )
+            else:
+                # Non-timeout error, re-raise
+                raise
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             await self._complete_agent_execution(
@@ -222,13 +296,6 @@ class PlanReviewWorkflow:
                 status="failed"
             )
             raise
-
-        return {
-            "current_plan": plan,
-            "status": "plan_created",
-            "messages": [AIMessage(content=plan, name="planning_agent")],
-            "checkpoint_number": state.get("checkpoint_number", 0) + 1
-        }
 
     async def _plan_checkpoint_node(self, state: PlanReviewState) -> dict:
         """Human checkpoint before sending to reviewers"""
@@ -307,26 +374,74 @@ class PlanReviewWorkflow:
                 for idx, agent in enumerate(review_agents)
             ]
 
-        reviews = await asyncio.gather(*review_tasks)
+        review_results = await asyncio.gather(*review_tasks)
 
-        # Collect feedback with generic agent names for prompts
+        # Check for timeouts
+        timed_out_agents = [r for r in review_results if r.get("timeout")]
+        successful_reviews = [r for r in review_results if r.get("success")]
+
+        # If any agent timed out, create checkpoint for first timeout
+        if timed_out_agents:
+            first_timeout = timed_out_agents[0]
+            logger.warning(
+                f"[ReviewAgents] {first_timeout['agent_name']} timed out, "
+                f"creating checkpoint ({len(successful_reviews)}/{len(review_results)} agents completed)"
+            )
+
+            # Build feedback from successful reviews to preserve in state
+            successful_feedback = [
+                {
+                    "agent_name": review_agents[i].name,
+                    "agent_type": review_agents[i].agent_type,
+                    "agent_identifier": f"REVIEW AGENT {i + 1}",
+                    "feedback": result["result"],
+                    "timestamp": datetime.now().isoformat()
+                }
+                for i, result in enumerate(review_results)
+                if result.get("success")
+            ]
+
+            # Store successful reviews so far in state for potential skip action
+            checkpoint_result = await self.checkpoint_manager.create_timeout_checkpoint(
+                state=state,
+                agent_name=first_timeout["agent_name"],
+                agent_type="review",
+                timeout_seconds=first_timeout["timeout_seconds"],
+                error_message=first_timeout["error"],
+                prompt=first_timeout["prompt"]
+            )
+
+            # If user chose to skip, include the successful reviews we collected
+            if checkpoint_result.get("skip_timed_out_agent"):
+                checkpoint_result["review_feedback"] = successful_feedback
+                if successful_feedback:
+                    checkpoint_result["messages"] = checkpoint_result.get("messages", []) + [
+                        AIMessage(content=fb["feedback"], name=f"review_agent_{i}")
+                        for i, fb in enumerate(successful_feedback)
+                    ]
+
+            return checkpoint_result
+
+        # All successful - collect feedback with generic agent names for prompts
         feedback = [
             {
-                "agent_name": agent.name,  # Real name for DB/UI
-                "agent_type": agent.agent_type,  # Real type for DB/UI
-                "agent_identifier": f"REVIEW AGENT {idx + 1}",  # Generic name for prompts
-                "feedback": review,
+                "agent_name": review_agents[i].name,  # Real name for DB/UI
+                "agent_type": review_agents[i].agent_type,  # Real type for DB/UI
+                "agent_identifier": f"REVIEW AGENT {i + 1}",  # Generic name for prompts
+                "feedback": result["result"],
                 "timestamp": datetime.now().isoformat()
             }
-            for idx, (agent, review) in enumerate(zip(review_agents, reviews))
+            for i, result in enumerate(review_results)
+            if result.get("success")
         ]
 
         return {
             "review_feedback": feedback,
             "status": "reviews_collected",
             "messages": [
-                AIMessage(content=review, name=f"review_agent_{i}")
-                for i, review in enumerate(reviews)
+                AIMessage(content=result["result"], name=f"review_agent_{i}")
+                for i, result in enumerate(review_results)
+                if result.get("success")
             ],
             "checkpoint_number": state["checkpoint_number"] + 1
         }
@@ -354,8 +469,15 @@ class PlanReviewWorkflow:
         prompt: str,
         workflow_id: str,
         agent_index: int
-    ) -> str:
-        """Execute review agent with database tracking"""
+    ) -> dict:
+        """
+        Execute review agent with database tracking.
+
+        Returns:
+            Dict with 'success', 'result', 'agent_name', 'timeout' keys
+        """
+        from backend.agents.cli_agent import CLIAgentError
+
         # Create execution record
         execution_id = await self._create_agent_execution(
             workflow_id=workflow_id,
@@ -377,7 +499,38 @@ class PlanReviewWorkflow:
                 execution_time_ms=execution_time_ms,
                 status="completed"
             )
-            return result
+            return {
+                "success": True,
+                "result": result,
+                "agent_name": agent.name,
+                "agent_index": agent_index,
+                "timeout": False
+            }
+        except CLIAgentError as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+
+            # Check if it's a timeout
+            if "timed out" in str(e).lower():
+                logger.warning(f"[{agent.name}] Timeout detected, will ask user how to proceed")
+                return {
+                    "success": False,
+                    "result": None,
+                    "agent_name": agent.name,
+                    "agent_index": agent_index,
+                    "timeout": True,
+                    "error": str(e),
+                    "timeout_seconds": agent.timeout,
+                    "prompt": prompt
+                }
+            else:
+                # Non-timeout error, re-raise
+                raise
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             await self._complete_agent_execution(
@@ -395,8 +548,15 @@ class PlanReviewWorkflow:
         messages: list,
         workflow_id: str,
         agent_index: int
-    ) -> str:
-        """Execute review agent with history and database tracking"""
+    ) -> dict:
+        """
+        Execute review agent with history and database tracking.
+
+        Returns:
+            Dict with 'success', 'result', 'agent_name', 'timeout' keys
+        """
+        from backend.agents.cli_agent import CLIAgentError
+
         prompt = self.templates.review_with_history(messages, plan, agent_index)
         logger.debug(f"[{agent.name}] Prompt with history length: {len(prompt)} chars")
 
@@ -421,7 +581,38 @@ class PlanReviewWorkflow:
                 execution_time_ms=execution_time_ms,
                 status="completed"
             )
-            return result
+            return {
+                "success": True,
+                "result": result,
+                "agent_name": agent.name,
+                "agent_index": agent_index,
+                "timeout": False
+            }
+        except CLIAgentError as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+
+            # Check if it's a timeout
+            if "timed out" in str(e).lower():
+                logger.warning(f"[{agent.name}] Timeout detected, will ask user how to proceed")
+                return {
+                    "success": False,
+                    "result": None,
+                    "agent_name": agent.name,
+                    "agent_index": agent_index,
+                    "timeout": True,
+                    "error": str(e),
+                    "timeout_seconds": agent.timeout,
+                    "prompt": prompt
+                }
+            else:
+                # Non-timeout error, re-raise
+                raise
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             await self._complete_agent_execution(
