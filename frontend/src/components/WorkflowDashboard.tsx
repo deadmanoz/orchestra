@@ -37,6 +37,13 @@ if (typeof document !== 'undefined' && !document.getElementById('loader-spin-key
   document.head.appendChild(style);
 }
 
+// Format duration for display
+function formatDuration(ms?: number): string {
+  if (!ms) return 'N/A';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 // Get descriptive status message based on workflow state
 function getWorkflowStatusMessage(
   workflow: Workflow,
@@ -93,7 +100,32 @@ function getWorkflowStatusMessage(
     if (agentTypes.includes('review')) {
       const iteration = pendingCheckpoint?.iteration ?? 0;
       const planVersion = iteration + 1;
-      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
+
+      // Get all review agent executions (running or completed in this batch)
+      const reviewAgents = executions.filter(e => e.agent_type === 'review');
+
+      // Sort by ID to maintain consistent order (REVIEW AGENT 1, 2, 3)
+      const sortedReviewAgents = reviewAgents.sort((a, b) => a.id - b.id);
+
+      // Get the most recent batch of review agents (those from current iteration)
+      const latestReviewBatch = sortedReviewAgents.slice(-3); // Assume 3 review agents max
+
+      // Build individual status strings
+      const agentStatuses = latestReviewBatch.map((agent, idx) => {
+        const agentNum = idx + 1;
+        if (agent.status === 'completed') {
+          return `Agent ${agentNum} ✓ (${formatDuration(agent.execution_time_ms)})`;
+        } else if (agent.status === 'running') {
+          return `Agent ${agentNum} running...`;
+        } else if (agent.status === 'failed') {
+          return `Agent ${agentNum} ✗`;
+        } else {
+          return `Agent ${agentNum} pending`;
+        }
+      });
+
+      const statusText = agentStatuses.join(' | ');
+      return { message: `Review agents (v${planVersion}): ${statusText}`, showSpinner: true };
     }
 
     if (runningAgents.length > 0) {
@@ -117,7 +149,33 @@ function getWorkflowStatusMessage(
     if (lastExecution.agent_type === 'planning' && lastExecution.status === 'completed') {
       const iteration = pendingCheckpoint?.iteration ?? 0;
       const planVersion = iteration + 1;
-      return { message: `Review agents reviewing plan (v${planVersion})...`, showSpinner: true };
+
+      // Check if there are any review agents that have started
+      const reviewAgents = executions.filter(e => e.agent_type === 'review');
+      if (reviewAgents.length > 0) {
+        // Sort by ID to maintain consistent order
+        const sortedReviewAgents = reviewAgents.sort((a, b) => a.id - b.id);
+        const latestReviewBatch = sortedReviewAgents.slice(-3);
+
+        const agentStatuses = latestReviewBatch.map((agent, idx) => {
+          const agentNum = idx + 1;
+          if (agent.status === 'completed') {
+            return `Agent ${agentNum} ✓ (${formatDuration(agent.execution_time_ms)})`;
+          } else if (agent.status === 'running') {
+            return `Agent ${agentNum} running...`;
+          } else if (agent.status === 'failed') {
+            return `Agent ${agentNum} ✗`;
+          } else {
+            return `Agent ${agentNum} pending`;
+          }
+        });
+
+        const statusText = agentStatuses.join(' | ');
+        return { message: `Review agents (v${planVersion}): ${statusText}`, showSpinner: true };
+      }
+
+      // Fallback if no review agents have started yet
+      return { message: `Review agents starting (v${planVersion})...`, showSpinner: true };
     }
 
     // If last executions were reviews, planning agent should be next (revision)
