@@ -17,7 +17,7 @@ class ClaudeAgent(JSONCLIAgent):
     Command format: claude --print --output-format json "<prompt>"
 
     Supports JSON schema via --json-schema flag for structured validation.
-    Supports plan mode via --plan flag to restrict to planning only (no code execution).
+    Supports plan mode via --permission-mode plan to restrict to planning only (no code execution).
     """
 
     def __init__(
@@ -62,7 +62,7 @@ class ClaudeAgent(JSONCLIAgent):
 
         # Add plan mode flag if enabled (restricts to planning, no code execution)
         if self.plan_mode:
-            cmd.append("--plan")
+            cmd.extend(["--permission-mode", "plan"])
             logger.debug(f"[{self.name}] Plan mode enabled - agent will only plan, not execute code")
 
         return cmd
