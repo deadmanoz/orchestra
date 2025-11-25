@@ -26,7 +26,8 @@ class ClaudeAgent(JSONCLIAgent):
         role: str = "general",
         workspace_path: str = None,
         timeout: int = None,
-        plan_mode: bool = False
+        plan_mode: bool = False,
+        display_name: str = None
     ):
         super().__init__(
             name=name,
@@ -38,6 +39,7 @@ class ClaudeAgent(JSONCLIAgent):
         )
         self.cli_path = settings.claude_cli_path
         self.plan_mode = plan_mode
+        self.display_name = display_name or name
 
     def get_cli_command(self, message: str) -> List[str]:
         """

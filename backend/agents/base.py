@@ -4,9 +4,10 @@ from typing import Optional, Any
 class AgentInterface(ABC):
     """Base interface for all agents"""
 
-    def __init__(self, name: str, agent_type: str):
+    def __init__(self, name: str, agent_type: str, display_name: str = None):
         self.name = name
         self.agent_type = agent_type
+        self.display_name = display_name or name
         self.status = "initialized"
 
     @abstractmethod

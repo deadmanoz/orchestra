@@ -17,6 +17,7 @@ class GeminiAgent(JSONCLIAgent):
     Command format: gemini -p "<prompt>" --output-format json
 
     Provides additional review perspective with Google's Gemini model.
+    Supports yolo mode control via --yolo flag for auto-approval.
     """
 
     def __init__(
@@ -24,7 +25,9 @@ class GeminiAgent(JSONCLIAgent):
         name: str,
         role: str = "review",
         workspace_path: str = None,
-        timeout: int = None
+        timeout: int = None,
+        yolo_mode: bool = True,
+        display_name: str = None
     ):
         super().__init__(
             name=name,
@@ -35,6 +38,8 @@ class GeminiAgent(JSONCLIAgent):
             use_stdin=True  # Use stdin to avoid argument length limits and work with file-based stdout
         )
         self.cli_path = settings.gemini_cli_path
+        self.yolo_mode = yolo_mode
+        self.display_name = display_name or name
 
     def get_cli_command(self, message: str) -> List[str]:
         """
@@ -49,12 +54,19 @@ class GeminiAgent(JSONCLIAgent):
         Returns:
             Command list with appropriate flags
         """
-        return [
+        cmd = [
             self.cli_path,
             "--output-format", "json",  # JSON output for parsing
-            "--yolo",                    # Auto-approve all actions (non-interactive)
             # No positional argument - message passed via stdin
         ]
+
+        # Only add --yolo for non-review roles (implementation agents)
+        # Review agents should not auto-approve actions
+        if self.yolo_mode:
+            cmd.append("--yolo")  # Auto-approve all actions (non-interactive)
+            logger.debug(f"[{self.name}] Yolo mode enabled - agent will auto-approve actions")
+
+        return cmd
 
     def extract_content_from_json(self, data: dict) -> str:
         """
