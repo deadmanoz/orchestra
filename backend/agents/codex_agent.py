@@ -95,7 +95,8 @@ class CodexAgent(CLIAgent):
             # So we just return the text response for now
             # In the future, we could parse the text and convert to structured format
             logger.info(f"[{self.name}] Review schema requested but Codex exec returns plain text")
-            return f"# Review by {self.name}\n\n{response}"
+            # Don't add agent name to output - prevents agent type leakage
+            return response
 
         return response
 
@@ -115,9 +116,8 @@ class CodexAgent(CLIAgent):
         try:
             output = []
 
-            # Header
-            reviewer = review_data.get('reviewer', self.name)
-            output.append(f"# Code Review by {reviewer}\n")
+            # Header - Don't include agent name to prevent type leakage
+            output.append(f"# Code Review\n")
 
             # Overall Assessment
             assessment = review_data.get('overall_assessment', {})
