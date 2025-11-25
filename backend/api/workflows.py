@@ -279,10 +279,26 @@ async def get_workflow(workflow_id: str):
     workflow_dict['created_at'] = datetime.fromisoformat(workflow_dict['created_at'])
     workflow_dict['updated_at'] = datetime.fromisoformat(workflow_dict['updated_at'])
 
+    # Fetch agent executions for this workflow
+    agent_executions = []
+    async with db.get_connection() as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            """
+            SELECT * FROM agent_executions
+            WHERE workflow_id = ?
+            ORDER BY started_at ASC
+            """,
+            (workflow_id,)
+        )
+        rows = await cursor.fetchall()
+        agent_executions = [dict(row) for row in rows]
+
     return WorkflowStateSnapshot(
         workflow=WorkflowResponse(**workflow_dict),
         pending_checkpoint=pending_checkpoint,
-        recent_messages=[]
+        recent_messages=[],
+        agent_executions=agent_executions
     )
 
 @router.post("/{workflow_id}/resume")
