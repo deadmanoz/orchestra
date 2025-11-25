@@ -28,7 +28,11 @@ class AgentFactory:
         agent_key = f"{role}_{name}"
 
         if agent_key in self._agents:
-            return self._agents[agent_key]
+            agent = self._agents[agent_key]
+            # Always update display_name if provided (cached agents may not have it)
+            if display_name:
+                agent.display_name = display_name
+            return agent
 
         # Determine timeout based on role
         timeout = self._get_timeout_for_role(role)

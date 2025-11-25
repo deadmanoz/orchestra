@@ -227,7 +227,7 @@ function ElapsedTimer({ startTime }: { startTime: string }) {
 }
 
 // Component for individual agent execution with collapsible content
-function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
+function AgentExecutionItem({ execution, planVersion }: { execution: AgentExecution; planVersion?: number }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -277,7 +277,19 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
     : isSummaryAgent
       ? 'rgba(250, 176, 5, 0.05)'
       : 'rgba(81, 207, 102, 0.05)';
-  const agentTypeLabel = isPlanningAgent ? '📋 Planning' : isSummaryAgent ? '📊 Summary' : '🔍 Review';
+
+  // Label changes based on status: "Planning" while running, "Plan v1" when complete
+  const getAgentTypeLabel = () => {
+    if (isPlanningAgent) {
+      if (execution.status === 'completed' && planVersion) {
+        return `📋 Plan v${planVersion}`;
+      }
+      return '📋 Planning';
+    }
+    if (isSummaryAgent) return '📊 Summary';
+    return '🔍 Review';
+  };
+  const agentTypeLabel = getAgentTypeLabel();
 
   // Approval status indicator for review agents
   const getApprovalBadge = () => {
@@ -534,9 +546,17 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
         }}>
           <h3 style={{ marginTop: 0 }}>Agent Executions</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {executions.map((execution) => (
-              <AgentExecutionItem key={execution.id} execution={execution} />
-            ))}
+            {executions.map((execution) => {
+              // Calculate plan version for planning agents (1st planning = v1, 2nd = v2, etc.)
+              let planVersion: number | undefined;
+              if (execution.agent_type === 'planning') {
+                const planningExecutions = executions.filter(e => e.agent_type === 'planning');
+                planVersion = planningExecutions.findIndex(e => e.id === execution.id) + 1;
+              }
+              return (
+                <AgentExecutionItem key={execution.id} execution={execution} planVersion={planVersion} />
+              );
+            })}
           </div>
         </div>
       )}
