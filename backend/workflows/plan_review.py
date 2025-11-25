@@ -12,6 +12,7 @@ from backend.workflows.templates import PromptTemplates
 from backend.agents.base import AgentInterface
 from backend.settings import settings
 from backend.services.checkpoint_manager import CheckpointManager
+from backend.services.review_analyzer import parse_verdicts_from_summary, map_verdict_to_agent_execution
 from backend.db.connection import db
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,32 @@ class PlanReviewWorkflow:
                 )
             )
             await conn.commit()
+
+    async def _update_approval_status(
+        self,
+        workflow_id: str,
+        agent_name: str,
+        approval_status: str
+    ) -> None:
+        """
+        Update the approval_status of a review agent execution.
+
+        Args:
+            workflow_id: The workflow ID
+            agent_name: The agent name to update
+            approval_status: The approval status (approved, has_feedback, unclear)
+        """
+        async with db.get_connection() as conn:
+            await conn.execute(
+                """
+                UPDATE agent_executions
+                SET approval_status = ?
+                WHERE workflow_id = ? AND agent_name = ? AND agent_type = 'review'
+                """,
+                (approval_status, workflow_id, agent_name)
+            )
+            await conn.commit()
+            logger.debug(f"[ApprovalStatus] Updated {agent_name} to {approval_status}")
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow"""
@@ -536,6 +563,20 @@ class PlanReviewWorkflow:
             )
 
             logger.info(f"[ReviewSummaryAgent] Summary generated ({len(summary)} chars)")
+
+            # Parse verdicts from summary and update approval status for each reviewer
+            try:
+                verdicts = parse_verdicts_from_summary(summary)
+                agent_verdicts = map_verdict_to_agent_execution(verdicts, review_feedback)
+
+                # Update approval_status for each review agent in the database
+                for agent_name, approval_status in agent_verdicts.items():
+                    await self._update_approval_status(workflow_id, agent_name, approval_status)
+
+                logger.info(f"[ReviewSummaryAgent] Updated approval status for {len(agent_verdicts)} reviewers")
+            except Exception as e:
+                logger.warning(f"[ReviewSummaryAgent] Failed to parse/update verdicts: {e}")
+                # Don't fail the workflow if verdict parsing fails
 
             # Add summary to review_feedback list so it's available in the checkpoint
             summary_feedback = {

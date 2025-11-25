@@ -195,28 +195,48 @@ Provide direct, unambiguous feedback that will help improve the plan.
         Build prompt for the review summary agent to consolidate all reviewer feedback.
         """
         feedback_sections = []
+        reviewer_list = []
         for idx, review in enumerate(review_feedback, 1):
             agent_id = review.get('agent_identifier', f'REVIEW AGENT {idx}')
+            reviewer_list.append(agent_id)
             feedback_sections.append(
                 f"=== {agent_id} ===\n{review['feedback']}\n"
             )
 
         all_feedback = "\n".join(feedback_sections)
+        reviewer_names = ", ".join(reviewer_list)
 
-        return f"""You are a REVIEW SUMMARY AGENT. Your task is to provide a brief, actionable summary of the feedback from multiple review agents.
+        return f"""You are a REVIEW SUMMARY AGENT. Your task is to:
+1. Evaluate each reviewer's verdict on the plan
+2. Provide a brief, actionable summary of the feedback
 
 The following review agents have analyzed a development plan:
 
 {all_feedback}
 
-Please provide a CONCISE EXECUTIVE SUMMARY (aim for 5-10 bullet points) that:
+## PART 1: REVIEWER VERDICTS
 
-1. **Key Issues**: List the most critical concerns raised across reviewers (prioritize issues mentioned by multiple reviewers)
-2. **Common Themes**: Identify patterns or themes that appear in multiple reviews
-3. **Quick Wins**: Note any easy-to-address suggestions
-4. **Blockers**: Highlight any showstopper issues that must be resolved
+For each reviewer ({reviewer_names}), determine their verdict. Output EXACTLY in this format:
 
-Format your response as a brief, scannable summary that a human reviewer can quickly digest.
-Do NOT repeat the full feedback - synthesize and distill the key points.
-Use bullet points and keep each point to 1-2 sentences maximum.
+```verdicts
+REVIEW AGENT 1: APPROVED | APPROVED_WITH_SUGGESTIONS | NEEDS_REVISION
+REVIEW AGENT 2: APPROVED | APPROVED_WITH_SUGGESTIONS | NEEDS_REVISION
+REVIEW AGENT 3: APPROVED | APPROVED_WITH_SUGGESTIONS | NEEDS_REVISION
+```
+
+Verdict definitions:
+- APPROVED: No blocking concerns, ready to proceed
+- APPROVED_WITH_SUGGESTIONS: Minor/optional improvements suggested, but can proceed
+- NEEDS_REVISION: Has blocking concerns or required changes before implementation
+
+## PART 2: EXECUTIVE SUMMARY
+
+Provide a CONCISE summary (5-10 bullet points) covering:
+
+1. **Key Issues**: Critical concerns raised (prioritize issues from multiple reviewers)
+2. **Common Themes**: Patterns across reviews
+3. **Quick Wins**: Easy-to-address suggestions
+4. **Blockers**: Showstopper issues that must be resolved (if any)
+
+Keep each bullet point to 1-2 sentences maximum.
 """

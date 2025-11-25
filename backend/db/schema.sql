@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     input_content TEXT NOT NULL,
     output_content TEXT,
     status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')),
+    approval_status TEXT CHECK(approval_status IN ('approved', 'has_feedback', 'unclear')),
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
     execution_time_ms INTEGER,

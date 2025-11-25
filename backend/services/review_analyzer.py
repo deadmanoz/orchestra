@@ -5,7 +5,10 @@ Analyzes review agent outputs to determine approval status.
 """
 
 import re
+import logging
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 
 def analyze_review_approval(review_content: str) -> Literal["approved", "has_feedback", "unclear"]:
@@ -123,3 +126,93 @@ def get_approval_summary(reviews: list[dict]) -> dict:
             "unclear": unclear
         }
     }
+
+
+def parse_verdicts_from_summary(summary_content: str) -> dict[str, Literal["approved", "has_feedback", "unclear"]]:
+    """
+    Parse reviewer verdicts from summary agent output.
+
+    Expects format like:
+    ```verdicts
+    REVIEW AGENT 1: APPROVED
+    REVIEW AGENT 2: APPROVED_WITH_SUGGESTIONS
+    REVIEW AGENT 3: NEEDS_REVISION
+    ```
+
+    Args:
+        summary_content: The summary agent's output
+
+    Returns:
+        Dict mapping agent identifier (e.g., "REVIEW AGENT 1") to approval status
+    """
+    verdicts = {}
+
+    # Try to find the verdicts block
+    verdicts_match = re.search(r'```verdicts\s*(.*?)\s*```', summary_content, re.DOTALL | re.IGNORECASE)
+
+    if verdicts_match:
+        verdicts_block = verdicts_match.group(1)
+    else:
+        # Fallback: look for verdict lines anywhere in the content
+        verdicts_block = summary_content
+
+    # Parse individual verdict lines
+    # Match patterns like "REVIEW AGENT 1: APPROVED" or "Review Agent 1: APPROVED_WITH_SUGGESTIONS"
+    verdict_pattern = re.compile(
+        r'(REVIEW\s+AGENT\s+\d+)\s*:\s*(APPROVED_WITH_SUGGESTIONS|APPROVED|NEEDS_REVISION)',
+        re.IGNORECASE
+    )
+
+    for match in verdict_pattern.finditer(verdicts_block):
+        agent_id = match.group(1).upper()
+        verdict_raw = match.group(2).upper()
+
+        # Map to our approval status values
+        if verdict_raw == "APPROVED":
+            verdicts[agent_id] = "approved"
+        elif verdict_raw == "APPROVED_WITH_SUGGESTIONS":
+            verdicts[agent_id] = "approved"  # Treat as approved (minor suggestions)
+        elif verdict_raw == "NEEDS_REVISION":
+            verdicts[agent_id] = "has_feedback"
+        else:
+            verdicts[agent_id] = "unclear"
+
+    logger.info(f"[VerdictParser] Parsed {len(verdicts)} verdicts from summary: {verdicts}")
+    return verdicts
+
+
+def map_verdict_to_agent_execution(
+    verdicts: dict[str, Literal["approved", "has_feedback", "unclear"]],
+    review_feedback: list[dict]
+) -> dict[str, Literal["approved", "has_feedback", "unclear"]]:
+    """
+    Map parsed verdicts to actual agent names for database updates.
+
+    Args:
+        verdicts: Dict from parse_verdicts_from_summary (keyed by "REVIEW AGENT N")
+        review_feedback: List of review feedback dicts with agent_name and agent_identifier
+
+    Returns:
+        Dict mapping actual agent_name to approval status
+    """
+    agent_verdicts = {}
+
+    for feedback in review_feedback:
+        agent_name = feedback.get('agent_name')
+        agent_identifier = feedback.get('agent_identifier', '').upper()
+
+        if not agent_name:
+            continue
+
+        # Try to find matching verdict by identifier
+        if agent_identifier in verdicts:
+            agent_verdicts[agent_name] = verdicts[agent_identifier]
+        else:
+            # Try fuzzy matching (e.g., "REVIEW AGENT 1" might be stored differently)
+            for verdict_key, verdict_value in verdicts.items():
+                if verdict_key in agent_identifier or agent_identifier in verdict_key:
+                    agent_verdicts[agent_name] = verdict_value
+                    break
+
+    logger.info(f"[VerdictMapper] Mapped verdicts to agents: {agent_verdicts}")
+    return agent_verdicts
