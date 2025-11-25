@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Workflow, Message, AgentExecution, Checkpoint } from '../types';
-import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2 } from 'lucide-react';
+import { CheckCircle, Clock, XCircle, PlayCircle, Folder, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { WorkflowStatus, CheckpointStep } from '../constants/workflowStatus';
 import IterationBreadcrumb from './IterationBreadcrumb';
 
@@ -224,6 +224,91 @@ function ElapsedTimer({ startTime }: { startTime: string }) {
   return <span>{formatElapsed(elapsed)}</span>;
 }
 
+// Component for individual agent execution with collapsible content
+function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case WorkflowStatus.COMPLETED:
+        return <CheckCircle color="#51cf66" size={20} />;
+      case WorkflowStatus.RUNNING:
+        return (
+          <span style={spinAnimation}>
+            <Loader2 color="#ffd43b" size={20} />
+          </span>
+        );
+      case WorkflowStatus.AWAITING_CHECKPOINT:
+        return <Clock color="#ffd43b" size={20} />;
+      case WorkflowStatus.FAILED:
+        return <XCircle color="#ff6b6b" size={20} />;
+      default:
+        return <PlayCircle color="#888" size={20} />;
+    }
+  };
+
+  const formatDuration = (ms?: number) => {
+    if (!ms) return 'N/A';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
+  return (
+    <div
+      style={{
+        padding: '1rem',
+        border: '1px solid #333',
+        borderRadius: '4px',
+        backgroundColor: '#0a0a0a'
+      }}
+    >
+      <div
+        onClick={() => execution.output_content && setIsExpanded(!isExpanded)}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          cursor: execution.output_content ? 'pointer' : 'default',
+          userSelect: 'none'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+          {execution.output_content && (
+            isExpanded ? <ChevronDown size={16} color="#888" /> : <ChevronRight size={16} color="#888" />
+          )}
+          <strong>{execution.agent_name}</strong>
+          <span style={{ color: '#888' }}>
+            ({execution.agent_type})
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {getStatusIcon(execution.status)}
+          <span style={{ fontSize: '0.9rem', color: execution.status === WorkflowStatus.COMPLETED ? '#51cf66' : '#888', fontWeight: execution.status === WorkflowStatus.COMPLETED ? 'bold' : 'normal' }}>
+            {execution.status === WorkflowStatus.RUNNING ? (
+              <ElapsedTimer startTime={execution.started_at} />
+            ) : (
+              formatDuration(execution.execution_time_ms)
+            )}
+          </span>
+        </div>
+      </div>
+      {isExpanded && execution.output_content && (
+        <div style={{
+          marginTop: '1rem',
+          paddingTop: '1rem',
+          borderTop: '1px solid #333',
+          fontSize: '0.9rem',
+          color: '#ccc',
+          whiteSpace: 'pre-wrap',
+          maxHeight: '400px',
+          overflow: 'auto'
+        }}>
+          {execution.output_content}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WorkflowDashboard({ workflow, messages, executions, pendingCheckpoint, onReset }: Props) {
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -335,45 +420,7 @@ export default function WorkflowDashboard({ workflow, messages, executions, pend
           <h3 style={{ marginTop: 0 }}>Agent Executions</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {executions.map((execution) => (
-              <div
-                key={execution.id}
-                style={{
-                  padding: '1rem',
-                  border: '1px solid #333',
-                  borderRadius: '4px',
-                  backgroundColor: '#0a0a0a'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <div>
-                    <strong>{execution.agent_name}</strong>
-                    <span style={{ color: '#888', marginLeft: '0.5rem' }}>
-                      ({execution.agent_type})
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {getStatusIcon(execution.status)}
-                    <span style={{ fontSize: '0.9rem', color: execution.status === WorkflowStatus.COMPLETED ? '#51cf66' : '#888', fontWeight: execution.status === WorkflowStatus.COMPLETED ? 'bold' : 'normal' }}>
-                      {execution.status === WorkflowStatus.RUNNING ? (
-                        <ElapsedTimer startTime={execution.started_at} />
-                      ) : (
-                        formatDuration(execution.execution_time_ms)
-                      )}
-                    </span>
-                  </div>
-                </div>
-                {execution.output_content && (
-                  <div style={{
-                    fontSize: '0.9rem',
-                    color: '#ccc',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '200px',
-                    overflow: 'auto'
-                  }}>
-                    {execution.output_content}
-                  </div>
-                )}
-              </div>
+              <AgentExecutionItem key={execution.id} execution={execution} />
             ))}
           </div>
         </div>

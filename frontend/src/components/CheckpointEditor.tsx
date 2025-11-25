@@ -90,13 +90,12 @@ export default function CheckpointEditor({ workflowId, checkpoint }: Props) {
 
   return (
     <div style={{
-      position: 'sticky',
-      bottom: 0,
       padding: '1.5rem',
       border: '2px solid #646cff',
       borderRadius: '8px',
       backgroundColor: '#1a1a1a',
-      boxShadow: '0 -4px 12px rgba(0,0,0,0.3)'
+      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+      marginTop: '1.5rem'
     }}>
       <div style={{ marginBottom: '1rem' }}>
         <h3 style={{ margin: '0 0 0.5rem 0' }}>
