@@ -34,6 +34,7 @@ class PlanReviewState(TypedDict):
     retry_agent: bool  # Flag to indicate retry after timeout
     timeout_extension: int  # Seconds to extend timeout for retry
     skip_timed_out_agent: str  # Agent name to skip if user chose to skip
+    plan_subdirectory: str  # Subdirectory for saving plans (persists across iterations)
 
 class PlanReviewWorkflow:
     """Implements the plan-review-iterate workflow with human checkpoints"""
@@ -289,13 +290,18 @@ class PlanReviewWorkflow:
                 status="completed"
             )
 
+            # Determine subdirectory for saving plan
+            # Reuse existing subdirectory if set (for revisions), otherwise extract from plan
+            subdirectory = state.get("plan_subdirectory")
+            if not subdirectory:
+                subdirectory = extract_semantic_name_from_plan(plan)
+                logger.info(f"[PlanningAgent] Extracted semantic directory: {subdirectory}")
+            else:
+                logger.info(f"[PlanningAgent] Reusing existing directory: {subdirectory}")
+
             # Auto-save plan to file if workspace_path is set
             if self.workspace_path:
                 try:
-                    # Extract semantic subdirectory name from plan content
-                    subdirectory = extract_semantic_name_from_plan(plan)
-                    logger.info(f"[PlanningAgent] Extracted semantic directory: {subdirectory}")
-
                     saved_path = save_plan_to_file(
                         workspace_path=self.workspace_path,
                         content=plan,
@@ -308,13 +314,15 @@ class PlanReviewWorkflow:
                     # Don't fail the workflow if auto-save fails
 
             # Clear retry flags if successful
+            # Include plan_subdirectory in return to persist it across iterations
             return {
                 "current_plan": plan,
                 "status": "plan_created",
                 "messages": [AIMessage(content=plan, name="planning_agent")],
                 "checkpoint_number": state.get("checkpoint_number", 0) + 1,
                 "retry_agent": None,  # Clear retry flag
-                "timeout_extension": None  # Clear extension
+                "timeout_extension": None,  # Clear extension
+                "plan_subdirectory": subdirectory  # Persist subdirectory for future iterations
             }
         except CLIAgentError as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
