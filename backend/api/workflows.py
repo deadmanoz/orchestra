@@ -109,19 +109,27 @@ async def save_checkpoint_resolution(
         )
         await conn.commit()
 
-def validate_workspace_path(workspace_path: Optional[str]) -> str:
+def validate_workspace_path(workspace_path: str) -> str:
     """
     Validate and resolve workspace path.
 
-    If no path provided, use the working_directory from settings.
+    workspace_path is mandatory - users must explicitly specify where agents will work.
     Creates the directory if it doesn't exist.
+
+    Args:
+        workspace_path: Absolute path to the workspace directory (required)
 
     Returns:
         Absolute path to workspace directory
+
+    Raises:
+        HTTPException: If path is invalid, not a directory, or not writable
     """
-    # Use default workspace if none provided
-    if not workspace_path:
-        workspace_path = settings.working_directory
+    if not workspace_path or not workspace_path.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="workspace_path is required. Please specify the directory where agents will work."
+        )
 
     # Resolve to absolute path
     resolved_path = Path(workspace_path).resolve()

@@ -20,7 +20,7 @@ class WorkflowCreate(BaseModel):
     name: str
     type: WorkflowType
     initial_prompt: str
-    workspace_path: Optional[str] = None
+    workspace_path: str  # Required: absolute path to the workspace directory
     metadata: Optional[dict[str, Any]] = None
 
 class WorkflowResponse(BaseModel):
@@ -28,7 +28,7 @@ class WorkflowResponse(BaseModel):
     name: str
     type: str
     status: str
-    workspace_path: Optional[str] = None
+    workspace_path: str  # Required: absolute path to the workspace directory
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
