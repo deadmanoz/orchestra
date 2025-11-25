@@ -197,6 +197,7 @@ class PlanReviewWorkflow:
         """Node for planning agent execution"""
         from backend.agents.cli_agent import CLIAgentError
         from backend.api.plans import save_plan_to_file
+        from backend.services.plan_analyzer import extract_semantic_name_from_plan
 
         iteration = state.get('iteration_count', 0)
         workflow_id = state.get('workflow_id')
@@ -260,10 +261,15 @@ class PlanReviewWorkflow:
             # Auto-save plan to file if workspace_path is set
             if self.workspace_path:
                 try:
+                    # Extract semantic subdirectory name from plan content
+                    subdirectory = extract_semantic_name_from_plan(plan)
+                    logger.info(f"[PlanningAgent] Extracted semantic directory: {subdirectory}")
+
                     saved_path = save_plan_to_file(
                         workspace_path=self.workspace_path,
                         content=plan,
-                        subdirectory=f"iteration-{iteration}"
+                        subdirectory=subdirectory,
+                        naming_strategy="version"  # Use version-based naming (plan-v1.md, plan-v2.md, etc.)
                     )
                     logger.info(f"[PlanningAgent] Auto-saved plan to {saved_path}")
                 except Exception as e:
