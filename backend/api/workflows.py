@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 import json
 import aiosqlite
+import os
 from pathlib import Path
 
 from backend.models.workflow import (
@@ -12,6 +13,7 @@ from backend.models.workflow import (
 from backend.workflows.plan_review import PlanReviewWorkflow
 from backend.agents.factory import agent_factory
 from backend.db.connection import db
+from backend.settings import settings
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from backend.services.workflow_manager import WorkflowStatusManager
@@ -107,20 +109,47 @@ async def save_checkpoint_resolution(
         )
         await conn.commit()
 
-def validate_workspace_path(workspace_path: Optional[str]) -> Optional[str]:
-    """Validate and resolve workspace path"""
+def validate_workspace_path(workspace_path: Optional[str]) -> str:
+    """
+    Validate and resolve workspace path.
+
+    If no path provided, use the working_directory from settings.
+    Creates the directory if it doesn't exist.
+
+    Returns:
+        Absolute path to workspace directory
+    """
+    # Use default workspace if none provided
     if not workspace_path:
-        return None
+        workspace_path = settings.working_directory
 
     # Resolve to absolute path
     resolved_path = Path(workspace_path).resolve()
 
-    # Check if path exists and is a directory
+    # Create directory if it doesn't exist
     if not resolved_path.exists():
-        raise HTTPException(status_code=400, detail=f"Workspace path does not exist: {workspace_path}")
+        logger.info(f"Creating workspace directory: {resolved_path}")
+        try:
+            resolved_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create workspace directory {workspace_path}: {str(e)}"
+            )
 
+    # Check if it's a directory
     if not resolved_path.is_dir():
-        raise HTTPException(status_code=400, detail=f"Workspace path is not a directory: {workspace_path}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Workspace path is not a directory: {workspace_path}"
+        )
+
+    # Check if writable
+    if not os.access(resolved_path, os.W_OK):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Workspace directory is not writable: {resolved_path}"
+        )
 
     # Convert to string
     return str(resolved_path)
