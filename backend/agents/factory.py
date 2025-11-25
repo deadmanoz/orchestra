@@ -87,16 +87,15 @@ class AgentFactory:
 
         # Determine agent type from name prefix
         if name.startswith("claude"):
-            # Enable plan mode for restricted roles to prevent accidental code execution
-            plan_mode = (role in restricted_roles)
-            if plan_mode:
-                logger.info(f"[Factory] Creating Claude agent '{name}' with plan mode enabled")
+            # Note: --permission-mode plan is NOT used because it causes Claude to
+            # create plan files instead of responding with content. Our "planning agent"
+            # outputs plans as text, it doesn't use Claude's internal planning feature.
             return ClaudeAgent(
                 name=name,
                 role=role,
                 workspace_path=workspace_path,
                 timeout=timeout,
-                plan_mode=plan_mode,
+                plan_mode=False,  # Don't use --permission-mode plan
                 display_name=display_name
             )
         elif name.startswith("codex"):
