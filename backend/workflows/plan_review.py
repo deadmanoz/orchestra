@@ -196,7 +196,7 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=planning_agent.name,
             agent_type="planning",
-            input_content=prompt[:1000]  # Truncate for storage
+            input_content=prompt  # Store full prompt
         )
 
         # Execute agent with timing
@@ -281,8 +281,8 @@ class PlanReviewWorkflow:
             reviewer_prompt = state["reviewer_prompt"]
             # Execute all reviews in parallel with the same custom prompt
             review_tasks = [
-                self._execute_review_agent_tracked(agent, reviewer_prompt, workflow_id)
-                for agent in review_agents
+                self._execute_review_agent_tracked(agent, reviewer_prompt, workflow_id, idx + 1)
+                for idx, agent in enumerate(review_agents)
             ]
         elif iteration > 0:
             # Revision with FULL conversation history for context
@@ -290,29 +290,35 @@ class PlanReviewWorkflow:
             logger.info(f"[ReviewAgents] Using conversation history template (iteration {iteration})")
             plan_to_review = state.get("user_edits") or state["current_plan"]
             review_tasks = [
-                self._execute_review_agent_with_history_tracked(agent, plan_to_review, state["messages"], workflow_id)
-                for agent in review_agents
+                self._execute_review_agent_with_history_tracked(agent, plan_to_review, state["messages"], workflow_id, idx + 1)
+                for idx, agent in enumerate(review_agents)
             ]
         else:
             # Initial review - use default template
             logger.info(f"[ReviewAgents] Using default reviewer prompt template")
             plan_to_review = state.get("user_edits") or state["current_plan"]
             review_tasks = [
-                self._execute_review_agent_tracked(agent, self.templates.review_request(plan_to_review, agent.name), workflow_id)
-                for agent in review_agents
+                self._execute_review_agent_tracked(
+                    agent,
+                    self.templates.review_request(plan_to_review, idx + 1),
+                    workflow_id,
+                    idx + 1
+                )
+                for idx, agent in enumerate(review_agents)
             ]
 
         reviews = await asyncio.gather(*review_tasks)
 
-        # Collect feedback
+        # Collect feedback with generic agent names for prompts
         feedback = [
             {
-                "agent_name": agent.name,
-                "agent_type": agent.agent_type,
+                "agent_name": agent.name,  # Real name for DB/UI
+                "agent_type": agent.agent_type,  # Real type for DB/UI
+                "agent_identifier": f"REVIEW AGENT {idx + 1}",  # Generic name for prompts
                 "feedback": review,
                 "timestamp": datetime.now().isoformat()
             }
-            for agent, review in zip(review_agents, reviews)
+            for idx, (agent, review) in enumerate(zip(review_agents, reviews))
         ]
 
         return {
@@ -325,19 +331,20 @@ class PlanReviewWorkflow:
             "checkpoint_number": state["checkpoint_number"] + 1
         }
 
-    async def _execute_review_agent(self, agent: AgentInterface, plan: str) -> str:
+    async def _execute_review_agent(self, agent: AgentInterface, plan: str, agent_index: int = 1) -> str:
         """Execute single review agent (initial review, no history)"""
-        prompt = self.templates.review_request(plan, agent.name)
+        prompt = self.templates.review_request(plan, agent_index)
         return await agent.send_message(prompt)
 
     async def _execute_review_agent_with_history(
         self,
         agent: AgentInterface,
         plan: str,
-        messages: list
+        messages: list,
+        agent_index: int = 1
     ) -> str:
         """Execute review agent with full conversation history"""
-        prompt = self.templates.review_with_history(messages, plan, agent.name)
+        prompt = self.templates.review_with_history(messages, plan, agent_index)
         logger.debug(f"[{agent.name}] Prompt with history length: {len(prompt)} chars")
         return await agent.send_message(prompt)
 
@@ -345,7 +352,8 @@ class PlanReviewWorkflow:
         self,
         agent: AgentInterface,
         prompt: str,
-        workflow_id: str
+        workflow_id: str,
+        agent_index: int
     ) -> str:
         """Execute review agent with database tracking"""
         # Create execution record
@@ -353,7 +361,7 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=agent.name,
             agent_type="review",
-            input_content=prompt[:1000]  # Truncate for storage
+            input_content=prompt  # Store full prompt
         )
 
         # Execute with timing
@@ -385,10 +393,11 @@ class PlanReviewWorkflow:
         agent: AgentInterface,
         plan: str,
         messages: list,
-        workflow_id: str
+        workflow_id: str,
+        agent_index: int
     ) -> str:
         """Execute review agent with history and database tracking"""
-        prompt = self.templates.review_with_history(messages, plan, agent.name)
+        prompt = self.templates.review_with_history(messages, plan, agent_index)
         logger.debug(f"[{agent.name}] Prompt with history length: {len(prompt)} chars")
 
         # Create execution record
@@ -396,7 +405,7 @@ class PlanReviewWorkflow:
             workflow_id=workflow_id,
             agent_name=agent.name,
             agent_type="review",
-            input_content=prompt[:1000]  # Truncate for storage
+            input_content=prompt  # Store full prompt
         )
 
         # Execute with timing
@@ -441,7 +450,7 @@ class PlanReviewWorkflow:
         current_plan = state.get("user_edits") or state["current_plan"]
         review_feedback = [
             {
-                "agent_name": fb["agent_name"],
+                "agent_identifier": fb.get("agent_identifier", "REVIEW AGENT"),
                 "feedback": fb["feedback"]
             }
             for fb in state["review_feedback"]
@@ -470,7 +479,9 @@ class PlanReviewWorkflow:
         consolidated = "=== CONSOLIDATED REVIEW FEEDBACK ===\n\n"
 
         for fb in feedback:
-            consolidated += f"## {fb['agent_name']}\n\n"
+            # Use generic agent_identifier for prompts, not agent_name
+            agent_id = fb.get('agent_identifier', fb.get('agent_name', 'REVIEW AGENT'))
+            consolidated += f"## {agent_id}\n\n"
             consolidated += fb['feedback']
             consolidated += "\n\n" + "="*60 + "\n\n"
 

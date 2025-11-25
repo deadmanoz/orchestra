@@ -42,7 +42,8 @@ Your plan will be reviewed by multiple REVIEW AGENTS before implementation.
                 if msg.name == "planning_agent":
                     role = "YOU (previous iteration)"
                 else:
-                    role = f"REVIEW AGENT ({msg.name})"
+                    # Generic role for review agents
+                    role = "REVIEW AGENT"
                 content = msg.content
             else:
                 continue
@@ -55,7 +56,7 @@ Your plan will be reviewed by multiple REVIEW AGENTS before implementation.
         feedback_section = ""
         if review_feedback:
             feedback_text = "\n\n".join([
-                f"**** {review['agent_name']} FEEDBACK START ****\n{review['feedback']}\n**** {review['agent_name']} FEEDBACK END ****"
+                f"**** {review.get('agent_identifier', 'REVIEW AGENT')} FEEDBACK START ****\n{review['feedback']}\n**** {review.get('agent_identifier', 'REVIEW AGENT')} FEEDBACK END ****"
                 for review in review_feedback
             ])
             feedback_section = f"\n\nThe REVIEW AGENTS have provided new feedback:\n\n{feedback_text}\n\n"
@@ -76,7 +77,7 @@ Provide your revised plan now.
     @staticmethod
     def planning_revision(current_plan: str, review_feedback: list[dict]) -> str:
         feedback_text = "\n\n".join([
-            f"**** {review['agent_name']} FEEDBACK START ****\n{review['feedback']}\n**** {review['agent_name']} FEEDBACK END ****"
+            f"**** {review.get('agent_identifier', 'REVIEW AGENT')} FEEDBACK START ****\n{review['feedback']}\n**** {review.get('agent_identifier', 'REVIEW AGENT')} FEEDBACK END ****"
             for review in review_feedback
         ])
 
@@ -93,8 +94,8 @@ Address the concerns raised and incorporate the suggestions.
 """
 
     @staticmethod
-    def review_request(plan: str, agent_name: str) -> str:
-        return f"""You are a REVIEW AGENT ({agent_name}) helping review a development plan.
+    def review_request(plan: str, agent_index: int) -> str:
+        return f"""You are REVIEW AGENT {agent_index} helping review a development plan.
 
 The PLANNING AGENT has prepared the following plan:
 
@@ -114,7 +115,7 @@ Provide direct, unambiguous feedback that will help improve the plan.
 """
 
     @staticmethod
-    def review_with_history(messages: list[BaseMessage], plan: str, agent_name: str) -> str:
+    def review_with_history(messages: list[BaseMessage], plan: str, agent_index: int) -> str:
         """
         Build review prompt with full conversation history for context.
 
@@ -122,8 +123,10 @@ Provide direct, unambiguous feedback that will help improve the plan.
         how the plan evolved based on their feedback.
         """
         # Build conversation history section
-        history_lines = [f"You are a REVIEW AGENT ({agent_name}). Here is the conversation history:\n"]
+        history_lines = [f"You are REVIEW AGENT {agent_index}. Here is the conversation history:\n"]
 
+        # Track which review agent index corresponds to which message index
+        review_agent_counter = 0
         for msg in messages:
             if isinstance(msg, HumanMessage):
                 # User messages (requirements, feedback)
@@ -135,11 +138,13 @@ Provide direct, unambiguous feedback that will help improve the plan.
                     role = "PLANNING AGENT"
                     content = msg.content
                 elif msg.name and msg.name.startswith("review_agent"):
-                    # Check if this is OUR previous review
-                    role = f"YOU (previous review)" if agent_name.lower() in msg.name.lower() else f"OTHER REVIEWER"
+                    # Assign generic review agent number based on order
+                    review_agent_counter += 1
+                    # Check if this could be our previous review (matching index)
+                    role = f"YOU (previous review)" if review_agent_counter % 3 == (agent_index - 1) else f"OTHER REVIEWER"
                     content = msg.content
                 else:
-                    role = f"AGENT ({msg.name})"
+                    role = "AGENT"
                     content = msg.content
             else:
                 continue
