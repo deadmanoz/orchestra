@@ -404,7 +404,16 @@ async def resume_workflow_execution(
         )
 
         # Check if workflow completed or hit another checkpoint
-        if result:
+        # We need to check the state for interrupts, not the result truthiness
+        # (ainvoke always returns the state dict, so `if result:` is always True)
+        state_after_resume = await compiled_workflow.aget_state(config)
+        has_pending_checkpoint = (
+            state_after_resume and
+            hasattr(state_after_resume, 'interrupts') and
+            state_after_resume.interrupts
+        )
+
+        if has_pending_checkpoint:
             # Hit another checkpoint - mark as awaiting (atomic update)
             await status_manager.mark_awaiting_checkpoint(workflow_id, result, validate=False)
         else:
