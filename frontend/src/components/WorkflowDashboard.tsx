@@ -128,6 +128,10 @@ function getWorkflowStatusMessage(
       return { message: `Review agents (v${planVersion}): ${statusText}`, showSpinner: true };
     }
 
+    if (agentTypes.includes('summary')) {
+      return { message: 'Summary agent synthesizing feedback...', showSpinner: true };
+    }
+
     if (runningAgents.length > 0) {
       return { message: 'Agents working...', showSpinner: true };
     }
@@ -268,13 +272,18 @@ function AgentExecutionItem({ execution }: { execution: AgentExecution }) {
 
   // Different styling based on agent type
   const isPlanningAgent = execution.agent_type === 'planning';
-  const borderColor = isPlanningAgent ? '#4c6ef5' : '#51cf66';
-  const backgroundColor = isPlanningAgent ? 'rgba(76, 110, 245, 0.05)' : 'rgba(81, 207, 102, 0.05)';
-  const agentTypeLabel = isPlanningAgent ? '📋 Planning' : '🔍 Review';
+  const isSummaryAgent = execution.agent_type === 'summary';
+  const borderColor = isPlanningAgent ? '#4c6ef5' : isSummaryAgent ? '#fab005' : '#51cf66';
+  const backgroundColor = isPlanningAgent
+    ? 'rgba(76, 110, 245, 0.05)'
+    : isSummaryAgent
+      ? 'rgba(250, 176, 5, 0.05)'
+      : 'rgba(81, 207, 102, 0.05)';
+  const agentTypeLabel = isPlanningAgent ? '📋 Planning' : isSummaryAgent ? '📊 Summary' : '🔍 Review';
 
   // Approval status indicator for review agents
   const getApprovalBadge = () => {
-    if (!execution.approval_status || isPlanningAgent) return null;
+    if (!execution.approval_status || isPlanningAgent || isSummaryAgent) return null;
 
     if (execution.approval_status === 'approved') {
       return (

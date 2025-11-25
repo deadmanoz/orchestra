@@ -45,6 +45,8 @@ class AgentFactory:
             return settings.planning_agent_timeout
         elif role == "review":
             return settings.review_agent_timeout
+        elif role == "summary":
+            return settings.summary_agent_timeout
         else:
             return settings.agent_timeout
 
@@ -108,6 +110,11 @@ class AgentFactory:
             agents.append(agent)
 
         return agents
+
+    async def get_summary_agent(self, workspace_path: Optional[str] = None) -> AgentInterface:
+        """Get the summary agent for consolidating review feedback"""
+        # Use Claude for summary as it excels at synthesis tasks
+        return await self.get_agent("summary", "claude_summary", workspace_path=workspace_path)
 
     async def stop_all(self):
         """Stop all agents"""

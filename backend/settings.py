@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     agent_timeout: int = 600  # 10 minutes (default)
     planning_agent_timeout: int = 900  # 15 minutes (planning is more complex)
     review_agent_timeout: int = 600  # 10 minutes
+    summary_agent_timeout: int = 300  # 5 minutes (summary is quick synthesis)
 
     # CLI Agent Paths
     claude_cli_path: str = "claude"  # Path to Claude Code CLI

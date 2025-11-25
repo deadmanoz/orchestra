@@ -128,6 +128,7 @@ class PlanReviewWorkflow:
         workflow.add_node("plan_checkpoint", self._plan_checkpoint_node)
         workflow.add_node("edit_reviewer_prompt_checkpoint", self._edit_reviewer_prompt_checkpoint_node)
         workflow.add_node("review_agents", self._review_agents_node)
+        workflow.add_node("review_summary_agent", self._review_summary_agent_node)
         workflow.add_node("review_checkpoint", self._review_checkpoint_node)
         workflow.add_node("edit_planner_prompt_checkpoint", self._edit_planner_prompt_checkpoint_node)
 
@@ -163,20 +164,23 @@ class PlanReviewWorkflow:
 
         workflow.add_edge("edit_reviewer_prompt_checkpoint", "review_agents")
 
-        # Review agents can route to review_checkpoint OR retry itself on timeout OR end if cancelled
+        # Review agents can route to review_summary_agent OR retry itself on timeout OR end if cancelled
         workflow.add_conditional_edges(
             "review_agents",
             lambda state: (
                 "review_agents" if state.get("retry_agent")
-                else state.get("next_step", "review_checkpoint") if state.get("next_step") in ["review_checkpoint", "end"]
-                else "review_checkpoint"
+                else "end" if state.get("next_step") == "end"
+                else "review_summary_agent"
             ),
             {
                 "review_agents": "review_agents",  # Retry after timeout
-                "review_checkpoint": "review_checkpoint",  # Normal flow or skip
+                "review_summary_agent": "review_summary_agent",  # Normal flow - go to summary
                 "end": END  # Cancel
             }
         )
+
+        # Review summary agent routes to review_checkpoint
+        workflow.add_edge("review_summary_agent", "review_checkpoint")
 
         # Conditional edge from review checkpoint
         workflow.add_conditional_edges(
@@ -486,6 +490,93 @@ class PlanReviewWorkflow:
             # Always restore original timeouts for next iteration
             for agent in review_agents:
                 agent.timeout = original_timeouts[agent.name]
+
+    async def _review_summary_agent_node(self, state: PlanReviewState) -> dict:
+        """Node for review summary agent execution - synthesizes all reviewer feedback"""
+        from backend.agents.cli_agent import CLIAgentError
+
+        workflow_id = state.get('workflow_id')
+        review_feedback = state.get('review_feedback', [])
+        logger.info(f"[ReviewSummaryAgent] Synthesizing feedback from {len(review_feedback)} reviewers")
+
+        # If no review feedback, skip summary
+        if not review_feedback:
+            logger.warning("[ReviewSummaryAgent] No review feedback to summarize, skipping")
+            return {
+                "status": "summary_skipped",
+            }
+
+        # Get summary agent
+        summary_agent = await self.agent_factory.get_summary_agent(workspace_path=self.workspace_path)
+
+        # Build summary prompt
+        prompt = self.templates.review_summary(review_feedback)
+
+        # Create execution record
+        execution_id = await self._create_agent_execution(
+            workflow_id=workflow_id,
+            agent_name=summary_agent.name,
+            agent_type="summary",
+            input_content=prompt
+        )
+
+        # Execute agent with timing
+        logger.debug(f"[ReviewSummaryAgent] Prompt length: {len(prompt)} chars")
+        start_time = time.time()
+        try:
+            summary = await summary_agent.send_message(prompt)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Update execution record
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=summary,
+                execution_time_ms=execution_time_ms,
+                status="completed"
+            )
+
+            logger.info(f"[ReviewSummaryAgent] Summary generated ({len(summary)} chars)")
+
+            # Add summary to review_feedback list so it's available in the checkpoint
+            summary_feedback = {
+                "agent_name": summary_agent.name,
+                "agent_type": "summary",
+                "agent_identifier": "REVIEW SUMMARY",
+                "feedback": summary,
+                "timestamp": datetime.now().isoformat(),
+                "is_summary": True  # Flag to identify this is the summary
+            }
+
+            return {
+                "review_feedback": review_feedback + [summary_feedback],
+                "status": "summary_generated",
+                "messages": [AIMessage(content=summary, name="summary_agent")],
+            }
+        except CLIAgentError as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+            # Summary failure shouldn't block the workflow - log and continue
+            logger.error(f"[ReviewSummaryAgent] Failed to generate summary: {e}")
+            return {
+                "status": "summary_failed",
+            }
+        except Exception as e:
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            await self._complete_agent_execution(
+                execution_id=execution_id,
+                output_content=str(e),
+                execution_time_ms=execution_time_ms,
+                status="failed"
+            )
+            logger.error(f"[ReviewSummaryAgent] Unexpected error: {e}")
+            return {
+                "status": "summary_failed",
+            }
 
     async def _execute_review_agent(self, agent: AgentInterface, plan: str, agent_index: int = 1) -> str:
         """Execute single review agent (initial review, no history)"""

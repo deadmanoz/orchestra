@@ -188,3 +188,35 @@ Focus on:
 
 Provide direct, unambiguous feedback that will help improve the plan.
 """
+
+    @staticmethod
+    def review_summary(review_feedback: list[dict]) -> str:
+        """
+        Build prompt for the review summary agent to consolidate all reviewer feedback.
+        """
+        feedback_sections = []
+        for idx, review in enumerate(review_feedback, 1):
+            agent_id = review.get('agent_identifier', f'REVIEW AGENT {idx}')
+            feedback_sections.append(
+                f"=== {agent_id} ===\n{review['feedback']}\n"
+            )
+
+        all_feedback = "\n".join(feedback_sections)
+
+        return f"""You are a REVIEW SUMMARY AGENT. Your task is to provide a brief, actionable summary of the feedback from multiple review agents.
+
+The following review agents have analyzed a development plan:
+
+{all_feedback}
+
+Please provide a CONCISE EXECUTIVE SUMMARY (aim for 5-10 bullet points) that:
+
+1. **Key Issues**: List the most critical concerns raised across reviewers (prioritize issues mentioned by multiple reviewers)
+2. **Common Themes**: Identify patterns or themes that appear in multiple reviews
+3. **Quick Wins**: Note any easy-to-address suggestions
+4. **Blockers**: Highlight any showstopper issues that must be resolved
+
+Format your response as a brief, scannable summary that a human reviewer can quickly digest.
+Do NOT repeat the full feedback - synthesize and distill the key points.
+Use bullet points and keep each point to 1-2 sentences maximum.
+"""
