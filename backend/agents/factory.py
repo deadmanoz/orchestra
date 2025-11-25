@@ -99,16 +99,12 @@ class AgentFactory:
                 display_name=display_name
             )
         elif name.startswith("codex"):
-            # Enable suggest mode for review role (no auto-edits)
-            suggest_mode = (role in restricted_roles)
-            if suggest_mode:
-                logger.info(f"[Factory] Creating Codex agent '{name}' with suggest mode enabled")
+            # Codex uses --full-auto for all roles (no suggest mode available in CLI)
             return CodexAgent(
                 name=name,
                 role=role,
                 workspace_path=workspace_path,
                 timeout=timeout,
-                suggest_mode=suggest_mode,
                 display_name=display_name
             )
         elif name.startswith("gemini"):

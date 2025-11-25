@@ -18,8 +18,6 @@ class CodexAgent(CLIAgent):
     Uses `codex exec` for non-interactive execution with automatic approval.
     Command format: codex exec --full-auto "<prompt>"
 
-    Supports suggest mode via --suggest flag to restrict to suggestions only (no auto-edits).
-
     Note: Codex CLI outputs plain text, not JSON. The --output-schema feature
     from our initial research is not available in the actual CLI.
     """
@@ -31,7 +29,6 @@ class CodexAgent(CLIAgent):
         workspace_path: str = None,
         timeout: int = None,
         use_review_schema: bool = True,
-        suggest_mode: bool = False,
         display_name: str = None
     ):
         super().__init__(
@@ -44,7 +41,6 @@ class CodexAgent(CLIAgent):
         )
         self.cli_path = settings.codex_cli_path
         self.use_review_schema = use_review_schema
-        self.suggest_mode = suggest_mode
         self.display_name = display_name or name
 
         # Path to review schema for structured output
@@ -71,14 +67,8 @@ class CodexAgent(CLIAgent):
         cmd = [
             self.cli_path,
             "exec",        # Non-interactive subcommand
+            "--full-auto",  # Low-friction sandboxed automatic execution
         ]
-
-        # Use suggest mode for review roles (no auto-edits)
-        if self.suggest_mode:
-            cmd.append("--suggest")
-            logger.debug(f"[{self.name}] Suggest mode enabled - agent will only suggest, not auto-edit")
-        else:
-            cmd.append("--full-auto")  # Low-friction sandboxed automatic execution
 
         return cmd
 
