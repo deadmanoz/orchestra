@@ -204,12 +204,14 @@ class PlanReviewWorkflow:
         # Get planning agent
         planning_agent = await self.agent_factory.get_agent("planning", "claude_planner", workspace_path=self.workspace_path)
 
+        # Store original timeout to restore after execution
+        original_timeout = planning_agent.timeout
+
         # Check if we're retrying after timeout with extension
         if state.get("retry_agent") and state.get("timeout_extension"):
             timeout_extension = state.get("timeout_extension", 0)
             logger.info(f"[PlanningAgent] Retrying with +{timeout_extension}s timeout extension")
             # Temporarily extend timeout
-            original_timeout = planning_agent.timeout
             planning_agent.timeout = original_timeout + timeout_extension
 
         # Build prompt - check if user provided custom planner prompt
@@ -296,6 +298,9 @@ class PlanReviewWorkflow:
                 status="failed"
             )
             raise
+        finally:
+            # Always restore original timeout for next iteration
+            planning_agent.timeout = original_timeout
 
     async def _plan_checkpoint_node(self, state: PlanReviewState) -> dict:
         """Human checkpoint before sending to reviewers"""
@@ -341,59 +346,105 @@ class PlanReviewWorkflow:
         # Get review agents
         review_agents = await self.agent_factory.get_review_agents(workspace_path=self.workspace_path)
 
-        # Check if user provided a custom reviewer prompt
-        if state.get("reviewer_prompt"):
-            # Use the custom prompt edited by the user
-            logger.info(f"[ReviewAgents] Using custom reviewer prompt edited by user")
-            reviewer_prompt = state["reviewer_prompt"]
-            # Execute all reviews in parallel with the same custom prompt
-            review_tasks = [
-                self._execute_review_agent_tracked(agent, reviewer_prompt, workflow_id, idx + 1)
-                for idx, agent in enumerate(review_agents)
-            ]
-        elif iteration > 0:
-            # Revision with FULL conversation history for context
-            # Review agents can reference their previous reviews
-            logger.info(f"[ReviewAgents] Using conversation history template (iteration {iteration})")
-            plan_to_review = state.get("user_edits") or state["current_plan"]
-            review_tasks = [
-                self._execute_review_agent_with_history_tracked(agent, plan_to_review, state["messages"], workflow_id, idx + 1)
-                for idx, agent in enumerate(review_agents)
-            ]
-        else:
-            # Initial review - use default template
-            logger.info(f"[ReviewAgents] Using default reviewer prompt template")
-            plan_to_review = state.get("user_edits") or state["current_plan"]
-            review_tasks = [
-                self._execute_review_agent_tracked(
-                    agent,
-                    self.templates.review_request(plan_to_review, idx + 1),
-                    workflow_id,
-                    idx + 1
+        # Store original timeouts to restore after execution
+        original_timeouts = {agent.name: agent.timeout for agent in review_agents}
+
+        # Check if we're retrying after timeout with extension
+        if state.get("retry_agent") and state.get("timeout_extension"):
+            timeout_extension = state.get("timeout_extension", 0)
+            logger.info(f"[ReviewAgents] Retrying with +{timeout_extension}s timeout extension for all agents")
+            # Extend timeout for all agents (since they run in parallel)
+            for agent in review_agents:
+                agent.timeout += timeout_extension
+
+        try:
+            # Check if user provided a custom reviewer prompt
+            if state.get("reviewer_prompt"):
+                # Use the custom prompt edited by the user
+                logger.info(f"[ReviewAgents] Using custom reviewer prompt edited by user")
+                reviewer_prompt = state["reviewer_prompt"]
+                # Execute all reviews in parallel with the same custom prompt
+                review_tasks = [
+                    self._execute_review_agent_tracked(agent, reviewer_prompt, workflow_id, idx + 1)
+                    for idx, agent in enumerate(review_agents)
+                ]
+            elif iteration > 0:
+                # Revision with FULL conversation history for context
+                # Review agents can reference their previous reviews
+                logger.info(f"[ReviewAgents] Using conversation history template (iteration {iteration})")
+                plan_to_review = state.get("user_edits") or state["current_plan"]
+                review_tasks = [
+                    self._execute_review_agent_with_history_tracked(agent, plan_to_review, state["messages"], workflow_id, idx + 1)
+                    for idx, agent in enumerate(review_agents)
+                ]
+            else:
+                # Initial review - use default template
+                logger.info(f"[ReviewAgents] Using default reviewer prompt template")
+                plan_to_review = state.get("user_edits") or state["current_plan"]
+                review_tasks = [
+                    self._execute_review_agent_tracked(
+                        agent,
+                        self.templates.review_request(plan_to_review, idx + 1),
+                        workflow_id,
+                        idx + 1
+                    )
+                    for idx, agent in enumerate(review_agents)
+                ]
+
+            review_results = await asyncio.gather(*review_tasks)
+
+            # Check for timeouts
+            timed_out_agents = [r for r in review_results if r.get("timeout")]
+            successful_reviews = [r for r in review_results if r.get("success")]
+
+            # If any agent timed out, create checkpoint for first timeout
+            if timed_out_agents:
+                first_timeout = timed_out_agents[0]
+                logger.warning(
+                    f"[ReviewAgents] {first_timeout['agent_name']} timed out, "
+                    f"creating checkpoint ({len(successful_reviews)}/{len(review_results)} agents completed)"
                 )
-                for idx, agent in enumerate(review_agents)
-            ]
 
-        review_results = await asyncio.gather(*review_tasks)
+                # Build feedback from successful reviews to preserve in state
+                successful_feedback = [
+                    {
+                        "agent_name": review_agents[i].name,
+                        "agent_type": review_agents[i].agent_type,
+                        "agent_identifier": f"REVIEW AGENT {i + 1}",
+                        "feedback": result["result"],
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    for i, result in enumerate(review_results)
+                    if result.get("success")
+                ]
 
-        # Check for timeouts
-        timed_out_agents = [r for r in review_results if r.get("timeout")]
-        successful_reviews = [r for r in review_results if r.get("success")]
+                # Store successful reviews so far in state for potential skip action
+                checkpoint_result = await self.checkpoint_manager.create_timeout_checkpoint(
+                    state=state,
+                    agent_name=first_timeout["agent_name"],
+                    agent_type="review",
+                    timeout_seconds=first_timeout["timeout_seconds"],
+                    error_message=first_timeout["error"],
+                    prompt=first_timeout["prompt"]
+                )
 
-        # If any agent timed out, create checkpoint for first timeout
-        if timed_out_agents:
-            first_timeout = timed_out_agents[0]
-            logger.warning(
-                f"[ReviewAgents] {first_timeout['agent_name']} timed out, "
-                f"creating checkpoint ({len(successful_reviews)}/{len(review_results)} agents completed)"
-            )
+                # If user chose to skip, include the successful reviews we collected
+                if checkpoint_result.get("skip_timed_out_agent"):
+                    checkpoint_result["review_feedback"] = successful_feedback
+                    if successful_feedback:
+                        checkpoint_result["messages"] = checkpoint_result.get("messages", []) + [
+                            AIMessage(content=fb["feedback"], name=f"review_agent_{i}")
+                            for i, fb in enumerate(successful_feedback)
+                        ]
 
-            # Build feedback from successful reviews to preserve in state
-            successful_feedback = [
+                return checkpoint_result
+
+            # All successful - collect feedback with generic agent names for prompts
+            feedback = [
                 {
-                    "agent_name": review_agents[i].name,
-                    "agent_type": review_agents[i].agent_type,
-                    "agent_identifier": f"REVIEW AGENT {i + 1}",
+                    "agent_name": review_agents[i].name,  # Real name for DB/UI
+                    "agent_type": review_agents[i].agent_type,  # Real type for DB/UI
+                    "agent_identifier": f"REVIEW AGENT {i + 1}",  # Generic name for prompts
                     "feedback": result["result"],
                     "timestamp": datetime.now().isoformat()
                 }
@@ -401,50 +452,20 @@ class PlanReviewWorkflow:
                 if result.get("success")
             ]
 
-            # Store successful reviews so far in state for potential skip action
-            checkpoint_result = await self.checkpoint_manager.create_timeout_checkpoint(
-                state=state,
-                agent_name=first_timeout["agent_name"],
-                agent_type="review",
-                timeout_seconds=first_timeout["timeout_seconds"],
-                error_message=first_timeout["error"],
-                prompt=first_timeout["prompt"]
-            )
-
-            # If user chose to skip, include the successful reviews we collected
-            if checkpoint_result.get("skip_timed_out_agent"):
-                checkpoint_result["review_feedback"] = successful_feedback
-                if successful_feedback:
-                    checkpoint_result["messages"] = checkpoint_result.get("messages", []) + [
-                        AIMessage(content=fb["feedback"], name=f"review_agent_{i}")
-                        for i, fb in enumerate(successful_feedback)
-                    ]
-
-            return checkpoint_result
-
-        # All successful - collect feedback with generic agent names for prompts
-        feedback = [
-            {
-                "agent_name": review_agents[i].name,  # Real name for DB/UI
-                "agent_type": review_agents[i].agent_type,  # Real type for DB/UI
-                "agent_identifier": f"REVIEW AGENT {i + 1}",  # Generic name for prompts
-                "feedback": result["result"],
-                "timestamp": datetime.now().isoformat()
+            return {
+                "review_feedback": feedback,
+                "status": "reviews_collected",
+                "messages": [
+                    AIMessage(content=result["result"], name=f"review_agent_{i}")
+                    for i, result in enumerate(review_results)
+                    if result.get("success")
+                ],
+                "checkpoint_number": state["checkpoint_number"] + 1
             }
-            for i, result in enumerate(review_results)
-            if result.get("success")
-        ]
-
-        return {
-            "review_feedback": feedback,
-            "status": "reviews_collected",
-            "messages": [
-                AIMessage(content=result["result"], name=f"review_agent_{i}")
-                for i, result in enumerate(review_results)
-                if result.get("success")
-            ],
-            "checkpoint_number": state["checkpoint_number"] + 1
-        }
+        finally:
+            # Always restore original timeouts for next iteration
+            for agent in review_agents:
+                agent.timeout = original_timeouts[agent.name]
 
     async def _execute_review_agent(self, agent: AgentInterface, plan: str, agent_index: int = 1) -> str:
         """Execute single review agent (initial review, no history)"""
