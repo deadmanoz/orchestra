@@ -1,3 +1,5 @@
+ℹ️ This project was a failed experiment in coordinating multiple agents, putting it out to pasture ℹ️
+
 # 🎭 Orchestra
 
 Multi-agent orchestration platform with human-in-the-loop checkpoints for coordinating CLI coding agents.
